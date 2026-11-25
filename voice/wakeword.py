@@ -31,6 +31,7 @@ import json
 import os
 import queue
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -58,6 +59,7 @@ QUERY_MAX_SECONDS = 9.0
 SILENCE_SECONDS = 1.2
 DEFAULT_THRESHOLD = 0.004
 DEFAULT_ASSISTANT_NAME = "Aura"
+OUTPUT_DEVICE: int | str | None = None
 
 # Console output is UTF-8 even on Windows consoles with a legacy code page;
 # agent replies may contain emoji that cp1252 cannot encode.
@@ -149,6 +151,24 @@ def sample_level(device: int, seconds: float = 0.5) -> float | None:
         sd.wait()
         return rms(audio.flatten())
     except Exception:  # unsupported host API/sample rate: skip this device
+        return None
+
+
+def choose_output_device() -> int | str | None:
+    """Use the G435 headset output (the only test output) when available."""
+    try:
+        for index, device in enumerate(sd.query_devices()):
+            if device["max_output_channels"] <= 0:
+                continue
+            name = device["name"].lower()
+            if "g435" in name or "headset earphone" in name:
+                print(f"[wakeword] output device [{index}] {device['name']}")
+                return index
+        default = sd.default.device[1]
+        print(f"[wakeword] no G435 output found; using default output [{default}]")
+        return default
+    except Exception as error:
+        print(f"[wakeword] output selection failed: {error}", file=sys.stderr)
         return None
 
 
@@ -332,7 +352,7 @@ def play_wav(path: Path) -> bool:
             return False
         if channels > 1:
             samples = samples.reshape(-1, channels).mean(axis=1)
-        sd.play(samples, rate)
+        sd.play(samples, rate, device=OUTPUT_DEVICE)
         sd.wait()
         return True
     except Exception as error:
@@ -401,18 +421,18 @@ def listening_chime() -> None:
     try:
         silence = np.zeros(int(0.03 * SAMPLE_RATE), dtype=np.float64)
         parts: list[np.ndarray] = []
-        for frequency, duration in ((660.0, 0.10), (988.0, 0.13)):
+        for frequency, duration in ((660.0, 0.14), (988.0, 0.18)):
             frames = int(duration * SAMPLE_RATE)
             time_axis = np.arange(frames, dtype=np.float64) / SAMPLE_RATE
             attack = np.clip(time_axis / 0.012, 0.0, 1.0)
             release = np.clip((duration - time_axis) / 0.04, 0.0, 1.0)
             envelope = np.minimum(attack, release)
             parts.append(
-                0.22 * np.sin(2.0 * np.pi * frequency * time_axis) * envelope
+                0.50 * np.sin(2.0 * np.pi * frequency * time_axis) * envelope
             )
             parts.append(silence)
         audio = np.concatenate(parts[:-1])
-        sd.play(audio.astype("float32"), SAMPLE_RATE)
+        sd.play(audio.astype("float32"), SAMPLE_RATE, device=OUTPUT_DEVICE)
         sd.wait()
         return
     except Exception as error:
@@ -448,6 +468,7 @@ def speak(command: str | None, text: str) -> bool:
 
 
 def main() -> int:
+    global OUTPUT_DEVICE
     parser = argparse.ArgumentParser(description="Local wake-word listener")
     parser.add_argument("--url", default=DEFAULT_URL, help="local kiosk base URL")
     parser.add_argument("--token", default="", help="kiosk token (default: read config)")
@@ -471,6 +492,12 @@ def main() -> int:
         default=None,
         type=lambda value: int(value) if value.isdigit() else value,
         help="audio input device index/name (default: system default)",
+    )
+    parser.add_argument(
+        "--output-device",
+        default=None,
+        type=lambda value: int(value) if value.isdigit() else value,
+        help="audio output device for chimes/TTS (default: G435 headset)",
     )
     parser.add_argument(
         "--auto-input",
@@ -568,6 +595,12 @@ def main() -> int:
                 f"threshold={args.threshold:.4f}"
             )
 
+    OUTPUT_DEVICE = (
+        args.output_device
+        if args.output_device is not None
+        else choose_output_device()
+    )
+
     token = args.token.strip() or read_kiosk_token(args.config)
     assistant_name = args.assistant_name.strip() or fetch_assistant_name(
         args.url, token
@@ -658,8 +691,9 @@ def main() -> int:
             # Do not block with a 2 s TTS prompt: start capturing immediately.
             # The user naturally starts talking right after the wake word, so
             # only a short Siri-like chime is played before the request
-            # recorder opens.
-            listening_chime()
+            # recorder opens; the chime runs in a thread so capture starts at
+            # once and the beginning of the request is never lost.
+            threading.Thread(target=listening_chime, daemon=True).start()
             print("[wakeword] listening for the request...")
             try:
                 request_audio = record_until_silence(
@@ -701,7 +735,9 @@ def main() -> int:
         ]
         if not args.no_conversation:
             for _turn in range(args.max_turns):
-                listening_chime()  # Siri-like cue: ready for a follow-up
+                threading.Thread(
+                    target=listening_chime, daemon=True
+                ).start()  # cue: ready for a follow-up
                 try:
                     follow_audio = record_until_silence(
                         args.follow_up_seconds,
@@ -752,6 +788,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
