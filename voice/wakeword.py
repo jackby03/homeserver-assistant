@@ -415,7 +415,7 @@ def record_utterance(
                 for offset in (0, 512, 1024)
             ]
             probability = max(probabilities)
-        energy_gate = max(threshold * 1.5, 0.002)
+        energy_gate = max(threshold * 3.0, 0.006)
         is_speech = (probability is not None and probability >= 0.5) or (
             level >= energy_gate
         )
@@ -1054,6 +1054,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
