@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { kioskApi } from '@/api/kiosk';
+import type { KioskHistoryEntry } from '@/api/kiosk';
 import { profilesApi } from '@/api/profiles';
 import { isKioskEvent } from '@/api/types';
 import type {
@@ -136,6 +137,7 @@ export function KioskPage(): React.JSX.Element {
   const [talkOpen, setTalkOpen] = useState(false);
   const [queryText, setQueryText] = useState('');
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
+  const [conversation, setConversation] = useState<KioskHistoryEntry[]>([]);
   const chatTimer = useRef(0);
   const chatSequence = useRef(0);
   const queryInput = useRef<HTMLInputElement | null>(null);
@@ -438,7 +440,15 @@ export function KioskPage(): React.JSX.Element {
     setAvatarState('thinking');
     setLive((current) => ({ ...current, agentActivity: 'thinking' }));
     try {
-      const response = await kioskApi.query(text);
+      const history = conversation.slice(-20);
+      const response = await kioskApi.query(text, history);
+      setConversation((current) =>
+        [
+          ...current,
+          { role: 'user' as const, content: text },
+          { role: 'assistant' as const, content: response.reply },
+        ].slice(-24),
+      );
       pushChat('assistant', response.reply);
       setLive((current) => ({ ...current, agentActivity: 'speaking' }));
       setAvatarState('speaking');
@@ -1036,5 +1046,6 @@ function activityToAvatar(activity: AgentActivity): AvatarState {
       return 'idle';
   }
 }
+
 
 
