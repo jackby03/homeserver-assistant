@@ -11,6 +11,7 @@
 use chrono::{Datelike, Local, Timelike};
 use hs_core::assistant::{normalize, parse_local_intent, LocalIntent};
 use hs_core::models::Profile;
+use std::time::Duration;
 
 use crate::state::AppState;
 
@@ -33,9 +34,9 @@ const JOKES: &[&str] = &[
 ];
 
 const CAPABILITIES: &str = "Puedo responder localmente, sin internet ni IA: \
-hora y fecha, subir o bajar el volumen, poner o pausar música, encender o apagar luces, \
-activar escenas, cálculos sencillos, chistes y preguntas sobre mí. \
-Si me preguntas algo más complejo, uso el modelo de IA configurado.";
+hora y fecha, el clima actual de Lima o de otra ciudad, subir o bajar el volumen, \
+poner o pausar música, encender o apagar luces, activar escenas, cálculos sencillos, \
+chistes y preguntas sobre mí. Si me preguntas algo más complejo, uso el modelo de IA configurado.";
 
 /// Execute a local intent if the utterance matches one.
 pub async fn try_local(state: &AppState, text: &str, profile: &Profile) -> Option<LocalReply> {
@@ -50,6 +51,11 @@ La mayoría de órdenes básicas las resuelvo aquí mismo, sin enviar nada a int
         LocalIntent::Capabilities => CAPABILITIES.to_owned(),
         LocalIntent::Thanks => format!("De nada, {}.", profile.name),
         LocalIntent::Farewell => format!("Hasta luego, {}.", profile.name),
+        LocalIntent::Weather { city } => weather_reply(city.as_deref()).await,
+        LocalIntent::Wellbeing => format!(
+            "Estoy muy bien, gracias por preguntar, {}. ¿Y tú cómo estás?",
+            profile.name
+        ),
         LocalIntent::Time => {
             let now = Local::now();
             format!("Son las {:02}:{:02}.", now.hour(), now.minute())
@@ -236,6 +242,142 @@ fn denied_reply(intent: &LocalIntent) -> LocalReply {
         ),
         intent: intent.id(),
         denied: true,
+    }
+}
+
+async fn weather_reply(city: Option<&str>) -> String {
+    let requested = city
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Lima");
+    let client = match reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return "No pude preparar la consulta del clima.".to_owned(),
+    };
+
+    let (name, latitude, longitude) = if requested.eq_ignore_ascii_case("lima") {
+        ("Lima".to_owned(), -12.04318_f64, -77.02824_f64)
+    } else {
+        match geocode_city(&client, requested).await {
+            Some(location) => location,
+            None => {
+                return format!(
+                    "No encontré la ciudad «{requested}». Prueba con otro nombre o revisa la conexión."
+                );
+            }
+        }
+    };
+
+    let params = [
+        ("latitude".to_owned(), latitude.to_string()),
+        ("longitude".to_owned(), longitude.to_string()),
+        (
+            "current".to_owned(),
+            "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,precipitation"
+                .to_owned(),
+        ),
+        ("timezone".to_owned(), "auto".to_owned()),
+    ];
+    let response = match client
+        .get("https://api.open-meteo.com/v1/forecast")
+        .query(&params)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(_) => {
+            return format!(
+                "No pude consultar el clima de {name} ahora mismo. Revisa la conexión a internet."
+            );
+        }
+    };
+    let body = match response.json::<serde_json::Value>().await {
+        Ok(body) => body,
+        Err(_) => {
+            return format!("El servicio del clima devolvió una respuesta inválida para {name}.");
+        }
+    };
+    let Some(current) = body.get("current") else {
+        return format!("No recibí datos actuales del clima para {name}.");
+    };
+    let Some(temperature) = current
+        .get("temperature_2m")
+        .and_then(|value| value.as_f64())
+    else {
+        return format!("No pude leer la temperatura actual de {name}.");
+    };
+    let apparent = current
+        .get("apparent_temperature")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(temperature);
+    let humidity = current
+        .get("relative_humidity_2m")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    let weather_code = current
+        .get("weather_code")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let precipitation = current
+        .get("precipitation")
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0);
+    let description = weather_description(weather_code);
+    let mut reply = format!(
+        "En {name} hay {temperature:.1} grados Celsius, con sensación de {apparent:.1} grados \
+y humedad del {humidity:.0} por ciento. {description}."
+    );
+    if precipitation > 0.0 {
+        reply.push_str(&format!(
+            " Hay {precipitation:.1} milímetros de precipitación."
+        ));
+    }
+    reply
+}
+
+async fn geocode_city(client: &reqwest::Client, city: &str) -> Option<(String, f64, f64)> {
+    let params = [
+        ("name".to_owned(), city.to_owned()),
+        ("count".to_owned(), "1".to_owned()),
+        ("language".to_owned(), "es".to_owned()),
+        ("format".to_owned(), "json".to_owned()),
+    ];
+    let response = client
+        .get("https://geocoding-api.open-meteo.com/v1/search")
+        .query(&params)
+        .send()
+        .await
+        .ok()?;
+    let body = response.json::<serde_json::Value>().await.ok()?;
+    let result = body.get("results")?.as_array()?.first()?;
+    let name = result.get("name")?.as_str()?.to_owned();
+    let latitude = result.get("latitude")?.as_f64()?;
+    let longitude = result.get("longitude")?.as_f64()?;
+    Some((name, latitude, longitude))
+}
+
+fn weather_description(code: i64) -> &'static str {
+    match code {
+        0 => "El cielo está despejado",
+        1 => "El cielo está mayormente despejado",
+        2 => "El cielo está parcialmente nublado",
+        3 => "El cielo está nublado",
+        45 | 48 => "Hay niebla",
+        51 | 53 | 55 => "Hay llovizna",
+        56 | 57 => "Hay llovizna helada",
+        61 | 63 | 65 => "Hay lluvia",
+        66 | 67 => "Hay lluvia helada",
+        71 | 73 | 75 => "Hay nieve",
+        77 => "Hay granos de nieve",
+        80..=82 => "Hay chubascos",
+        85 | 86 => "Hay chubascos de nieve",
+        95 => "Hay tormenta",
+        96 | 99 => "Hay tormenta con granizo",
+        _ => "Las condiciones son variables",
     }
 }
 
