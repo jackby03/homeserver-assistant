@@ -59,7 +59,7 @@ visión 100 % local.
 - **IA y perfiles**: proveedores OpenAI, Anthropic, DeepSeek, opencode-go y
   endpoints compatibles, claves cifradas, herramientas con permisos por perfil,
   workflows tipo nodo y perfiles familiares con avatar y biometría local.
-- **Voz en el kiosko**: botón de pulsar-y-hablar que graba con el micrófono de Chrome y transcribe en un servidor STT local loopback (evita la interfaz de audio corrupta de PortAudio/WDM en Windows).\n- **Asistente local-first**: router de comandos en español que resuelve sin IA
+- **Voz en el kiosko**: pulsar-y-hablar **y wake word continuo** usando el micrófono de Chrome con STT local loopback (evita la interfaz de audio corrupta de PortAudio/WDM en Windows).\n- **Voz en el kiosko (detalle)**: botón de pulsar-y-hablar que graba con el micrófono de Chrome y transcribe en un servidor STT local loopback (evita la interfaz de audio corrupta de PortAudio/WDM en Windows).\n- **Asistente local-first**: router de comandos en español que resuelve sin IA
   ni Internet la hora/fecha, volumen, música, luces y escenas de Home Assistant,
   cálculos, chistes, identidad y ayuda. Solo las preguntas que no cubre pasan al
   LLM configurado (con permisos por perfil también para las acciones locales).
@@ -331,6 +331,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
 
 
 

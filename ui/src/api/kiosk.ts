@@ -1,6 +1,7 @@
 import { http } from './client';import type {
   AgentChatResponse,
   KioskStateResponse,
+  KioskWakeOutcome,
   MusicState,
 } from './types';
 import { readStored, writeStored } from '../lib/preferences';
@@ -47,6 +48,13 @@ export const kioskApi = {
 
   setListening: (active: boolean): Promise<void> =>
     http.post<void>('/kiosk/listening', { active }, { headers: authHeaders() }),
+
+  wake: (transcript: string): Promise<KioskWakeOutcome> =>
+    http.post<KioskWakeOutcome>(
+      '/kiosk/wake',
+      { transcript },
+      { headers: authHeaders() },
+    ),
 
   query: (text: string, history: KioskHistoryEntry[] = []): Promise<AgentChatResponse> =>
     http.post<AgentChatResponse>(
