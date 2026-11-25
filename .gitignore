@@ -64,3 +64,5 @@ __pycache__/
 
 # Piper temporary audio
 hs-piper-*/
+
+/pip-*
