@@ -50,6 +50,8 @@ except ImportError as error:  # pragma: no cover - dependency guidance
     raise SystemExit(2) from error
 
 SAMPLE_RATE = 16_000
+CAPTURE_RATE = 48_000
+DECIMATION = CAPTURE_RATE // SAMPLE_RATE
 DEFAULT_CONFIG = Path("/var/lib/homecore/config.json")
 DEFAULT_URL = "http://127.0.0.1:3000"
 WAKE_MAX_SECONDS = 4.0
@@ -139,17 +141,25 @@ def print_input_devices() -> None:
         print(f"  [{index:2d}] {device['name']} (host API {device['hostapi']})")
 
 
+def downsample_to_target(audio: np.ndarray) -> np.ndarray:
+    """48 kHz device capture -> 16 kHz for Silero VAD and Whisper."""
+    usable = (audio.size // DECIMATION) * DECIMATION
+    if usable == 0:
+        return audio.astype(np.float32)
+    return audio[:usable].reshape(-1, DECIMATION).mean(axis=1).astype(np.float32)
+
+
 def sample_level(device: int, seconds: float = 0.5) -> float | None:
     try:
         audio = sd.rec(
-            int(seconds * SAMPLE_RATE),
-            samplerate=SAMPLE_RATE,
+            int(seconds * CAPTURE_RATE),
+            samplerate=CAPTURE_RATE,
             channels=1,
             device=device,
             dtype="float32",
         )
         sd.wait()
-        return rms(audio.flatten())
+        return rms(downsample_to_target(audio.flatten()))
     except Exception:  # unsupported host API/sample rate: skip this device
         return None
 
@@ -195,14 +205,14 @@ def stream_probe_level(device: int, attempts: int = 6) -> float | None:
     for _ in range(attempts):
         try:
             audio = sd.rec(
-                512,
-                samplerate=SAMPLE_RATE,
+                1536,  # 32 ms at the device's native 48 kHz
+                samplerate=CAPTURE_RATE,
                 channels=1,
                 dtype="float32",
                 device=device,
             )
             sd.wait()
-            levels.append(rms(audio.flatten()))
+            levels.append(rms(downsample_to_target(audio.flatten())))
         except Exception:
             return None
     return max(levels) if levels else None
@@ -247,10 +257,16 @@ def rms(block: np.ndarray) -> float:
 
 
 def record_window(seconds: float, device: str | int | None) -> np.ndarray:
-    frames = int(seconds * SAMPLE_RATE)
-    audio = sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="float32", device=device)
+    frames = int(seconds * CAPTURE_RATE)
+    audio = sd.rec(
+        frames,
+        samplerate=CAPTURE_RATE,
+        channels=1,
+        dtype="float32",
+        device=device,
+    )
     sd.wait()
-    return audio.flatten()
+    return downsample_to_target(audio.flatten())
 
 
 def enhance_audio(audio: np.ndarray) -> np.ndarray:
@@ -359,14 +375,14 @@ def record_utterance(
     peak = 0.0
     while True:
         block = sd.rec(
-            chunk_samples,
-            samplerate=SAMPLE_RATE,
+            1536,  # 32 ms at 48 kHz; decimated to 512 samples at 16 kHz
+            samplerate=CAPTURE_RATE,
             channels=1,
             dtype="float32",
             device=device,
         )
         sd.wait()
-        mono = block.flatten()
+        mono = downsample_to_target(block.flatten())
         level = rms(mono)
         peak = max(peak, level)
         probability = vad.probability(mono) if vad is not None else None
@@ -432,14 +448,14 @@ def record_until_silence(
     deadline = time.monotonic() + max_seconds
     while time.monotonic() < deadline:
         block = sd.rec(
-            int(chunk * SAMPLE_RATE),
-            samplerate=SAMPLE_RATE,
+            int(chunk * CAPTURE_RATE),
+            samplerate=CAPTURE_RATE,
             channels=1,
             dtype="float32",
             device=device,
         )
         sd.wait()
-        mono = block.flatten()
+        mono = downsample_to_target(block.flatten())
         blocks.append(mono.copy())
         if rms(mono) < threshold:
             if speech_started:
@@ -984,6 +1000,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
