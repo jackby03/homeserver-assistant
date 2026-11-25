@@ -43,9 +43,11 @@ pub mod llm;
 pub mod prompt;
 pub mod providers;
 pub mod service;
+pub mod soul;
 
 pub use error::{AgentError, AgentResult};
 pub use llm::{LlmClient, LlmClientFactory, LlmRequest, LlmResponse, LlmToolSpec};
-pub use prompt::build_system_prompt;
+pub use prompt::{build_system_prompt, build_system_prompt_with_soul};
 pub use providers::{normalize_model, DefaultFactory, DEFAULT_OPENCODE_GO_BASE_URL};
 pub use service::{AgentService, ProviderTest, UpsertProviderRequest};
+pub use soul::DEFAULT_SOUL;

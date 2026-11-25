@@ -2,23 +2,39 @@
 
 use hs_core::models::{Profile, Tone};
 
-/// Build the system prompt for a chat turn with `profile`.
-///
-/// The prompt carries the profile name, role, language and tone so a single
-/// configured provider can serve the whole family, plus the tool-use rules,
-/// the current local clock and the safety/voice instructions defined by the
-/// appliance.
+use crate::soul::DEFAULT_SOUL;
+
+/// Build the system prompt for a chat turn with `profile` and the shipped soul.
 #[must_use]
 pub fn build_system_prompt(profile: &Profile) -> String {
+    build_system_prompt_with_soul(profile, DEFAULT_SOUL)
+}
+
+/// Build the system prompt with an explicit SOUL.md identity.
+///
+/// The soul defines Bober's stable personality and voice. The runtime block
+/// adds the active profile, language/tone, local clock, tool rules and safety
+/// invariants; those runtime instructions take precedence when they conflict
+/// with the soul.
+#[must_use]
+pub fn build_system_prompt_with_soul(profile: &Profile, soul: &str) -> String {
     let language = match profile.language.as_str() {
         "es" => "Always answer in Spanish (es), using a natural household register.",
         _ => "Always answer in English (en).",
     };
     let tone = tone_instruction(profile.tone);
     let clock = chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z");
+    let soul = if soul.trim().is_empty() {
+        DEFAULT_SOUL
+    } else {
+        soul
+    };
 
     format!(
-        "You are the household assistant of HomeServer Assistant OS, a local-first home server appliance.\n\
+        "{soul}\n\
+         \n\
+         ---\n\
+         Runtime context for this turn (takes precedence over the soul when they conflict):\n\
          You are speaking with {name}, whose household role is {role}.\n\
          {language}\n\
          Conversational tone: {tone}.\n\
@@ -58,7 +74,8 @@ pub fn build_system_prompt(profile: &Profile) -> String {
         role = profile.role.id(),
         language = language,
         tone = tone,
-        clock = clock
+        clock = clock,
+        soul = soul.trim()
     )
 }
 
@@ -94,8 +111,9 @@ mod tests {
     }
 
     #[test]
-    fn prompt_contains_profile_identity() {
+    fn prompt_contains_soul_and_profile_identity() {
         let prompt = build_system_prompt(&profile("Mamá", "es", Tone::Friendly));
+        assert!(prompt.contains("SOUL.md — Bober"));
         assert!(prompt.contains("Mamá"));
         assert!(prompt.contains("adult"));
         assert!(prompt.contains("Spanish"));
@@ -108,16 +126,19 @@ mod tests {
     }
 
     #[test]
-    fn prompt_uses_english_for_english_profiles() {
-        let prompt = build_system_prompt(&profile("Alex", "en", Tone::Formal));
+    fn custom_soul_is_used_but_runtime_context_wins() {
+        let prompt =
+            build_system_prompt_with_soul(&profile("Alex", "en", Tone::Formal), "CUSTOM SOUL");
+        assert!(prompt.contains("CUSTOM SOUL"));
+        assert!(prompt.contains("Runtime context"));
         assert!(prompt.contains("English"));
         assert!(prompt.contains("formal, precise and concise"));
-        assert!(!prompt.contains("Spanish"));
     }
 
     #[test]
-    fn unknown_language_falls_back_to_english() {
-        let prompt = build_system_prompt(&profile("Guest", "fr", Tone::Calm));
+    fn empty_soul_falls_back_to_the_shipped_identity() {
+        let prompt = build_system_prompt_with_soul(&profile("Guest", "fr", Tone::Calm), "  ");
+        assert!(prompt.contains("SOUL.md — Bober"));
         assert!(prompt.contains("English"));
         assert!(prompt.contains("calm, brief and neutral"));
     }

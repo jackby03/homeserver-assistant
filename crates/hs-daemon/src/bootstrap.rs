@@ -121,16 +121,26 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
         timers,
     );
     let tools = ToolRegistry::builtin(ports);
+    let soul = match hs_agent::soul::load_or_seed(&daemon.data_dir) {
+        Ok(soul) => soul,
+        Err(error) => {
+            tracing::warn!(%error, "could not load SOUL.md; using the built-in personality");
+            hs_agent::DEFAULT_SOUL.to_owned()
+        }
+    };
     let factory = Arc::new(DefaultFactory::default());
-    let agent = Arc::new(AgentService::new(
-        Arc::clone(&db),
-        Arc::clone(&secrets),
-        Arc::clone(&profiles),
-        Arc::clone(&tools),
-        factory,
-        config.agent.temperature,
-        config.agent.max_tool_steps,
-    ));
+    let agent = Arc::new(
+        AgentService::new(
+            Arc::clone(&db),
+            Arc::clone(&secrets),
+            Arc::clone(&profiles),
+            Arc::clone(&tools),
+            factory,
+            config.agent.temperature,
+            config.agent.max_tool_steps,
+        )
+        .with_soul(soul),
+    );
 
     let kiosk = Arc::new(KioskManager::new(
         events.clone(),

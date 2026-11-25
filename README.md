@@ -102,6 +102,18 @@ visión 100 % local.
 
 ---
 
+### Personalidad de Bober (SOUL.md)
+
+La identidad estable del asistente vive en [`SOUL.md`](SOUL.md): carácter,
+estilo de voz, criterio para usar herramientas, límites de seguridad y ejemplos.
+El prompt de ejecución lo combina con el perfil activo, el idioma, el tono, la
+hora local y las reglas de seguridad; el contexto de ejecución manda si hay
+conflicto.
+
+Al arrancar, el daemon copia el SOUL por defecto a `data/SOUL.md` si no existe.
+Para cambiar la personalidad en una instalación concreta, edita
+`data/SOUL.md` y reinicia el daemon. El archivo no contiene secretos.
+
 ## Arquitectura en 30 segundos
 
 Cuatro planos acoplados por APIs locales, un solo demonio privilegiado:
@@ -310,7 +322,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | DNS DoH/DoT, nftables, DMZ, netplan | ✅ Catálogo de 40 variantes, renderizado/golden tests; aplicación real en Linux |
 | Home Assistant + descubrimiento IoT | ✅ Implementado con transportes simulados en tests |
 | Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional, respuestas sin emojis para TTS |
-| Agente IA, herramientas, workflows, perfiles | ✅ 17 herramientas con permisos por perfil, memoria, timers, noticias RSS y trazas |
+| Agente IA, herramientas, workflows, perfiles | ✅ 17 herramientas, SOUL.md editable, memoria, timers, noticias RSS y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
 | UI (admin, kiosko, wizard) | ✅ Type-check, 15 tests y build de producción (0,90 MB) |
 | Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; build/prueba real en host Linux |

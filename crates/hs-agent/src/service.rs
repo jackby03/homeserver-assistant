@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use crate::error::{AgentError, AgentResult};
 use crate::llm::{LlmClientFactory, LlmRequest, LlmToolSpec};
-use crate::prompt::build_system_prompt;
+use crate::prompt::build_system_prompt_with_soul;
 use crate::providers::{normalize_model, provider_secret_name, DEFAULT_MAX_TOKENS};
 
 /// Result of a provider connectivity test.
@@ -143,6 +143,7 @@ pub struct AgentService {
     factory: Arc<dyn LlmClientFactory>,
     temperature: f32,
     max_tool_steps: u8,
+    soul: String,
     /// Explicitly selected provider. When unset (or no longer usable) the first
     /// enabled provider is used.
     pub active_provider: tokio::sync::RwLock<Option<Uuid>>,
@@ -187,8 +188,21 @@ impl AgentService {
             factory,
             temperature,
             max_tool_steps: max_tool_steps.clamp(1, 20),
+            soul: crate::soul::DEFAULT_SOUL.to_owned(),
             active_provider: tokio::sync::RwLock::new(None),
         }
+    }
+
+    /// Replace the personality loaded from `SOUL.md`.
+    ///
+    /// An empty soul is ignored so the shipped identity is never lost by an
+    /// accidental empty file.
+    #[must_use]
+    pub fn with_soul(mut self, soul: String) -> Self {
+        if !soul.trim().is_empty() {
+            self.soul = soul;
+        }
+        self
     }
 
     /// List configured providers ordered by creation time.
@@ -441,7 +455,7 @@ impl AgentService {
         } else {
             Vec::new()
         };
-        let system = build_system_prompt(&profile);
+        let system = build_system_prompt_with_soul(&profile, &self.soul);
 
         let mut messages = request.messages;
         let session_id = conversation_session_id(request.profile_id, &messages);
