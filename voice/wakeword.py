@@ -246,14 +246,45 @@ def transcribe(
         return ""
 
 
-def speak(command: str | None, text: str) -> None:
-    """Pipe the reply to an optional local TTS command (e.g. piper)."""
-    if not command or not text:
+def beep() -> None:
+    """Short local listening cue played through the default audio output."""
+    try:
+        duration = 0.18
+        frames = int(duration * SAMPLE_RATE)
+        tone = 0.28 * np.sin(
+            2.0 * np.pi * 880.0 * np.arange(frames, dtype=np.float64) / SAMPLE_RATE
+        )
+        sd.play(tone.astype("float32"), SAMPLE_RATE)
+        sd.wait()
         return
+    except Exception as error:
+        print(f"[wakeword] cue playback failed: {error}", file=sys.stderr)
+    try:
+        import winsound
+
+        winsound.Beep(880, 180)
+    except Exception:
+        pass
+
+
+def prompt_listening(command: str | None, language: str) -> None:
+    """Tell the user to speak: local voice when allowed, otherwise a tone."""
+    text = "Te escucho." if language == "es" else "I'm listening."
+    if command:
+        result = speak(command, text)
+        if result:
+            return
+    beep()
+
+
+def speak(command: str | None, text: str) -> bool:
+    """Pipe text to a local TTS command; returns False when it failed."""
+    if not command or not text:
+        return False
     import subprocess  # local only
 
     try:
-        subprocess.run(  # noqa: S603 - operator supplied local command
+        completed = subprocess.run(  # noqa: S603 - operator supplied local command
             command,
             input=text,
             text=True,
@@ -261,8 +292,10 @@ def speak(command: str | None, text: str) -> None:
             check=False,
             timeout=60,
         )
+        return completed.returncode == 0
     except Exception as error:  # TTS must never kill the microphone loop
         print(f"[wakeword] TTS failed: {error}", file=sys.stderr)
+        return False
 
 
 def main() -> int:
@@ -439,12 +472,10 @@ def main() -> int:
         trailing = (outcome.get("trailing_query") or "").strip()
         query = trailing
         if not query:
-            # Let the user know the assistant is listening for the request; the
-            # prompt plays in their headset, not through room speakers.
-            speak(
-                args.tts_command or None,
-                "Te escucho." if args.language == "es" else "I'm listening.",
-            )
+            # Tell the user to speak: local voice when allowed, otherwise a
+            # short tone through the headset (Windows blocks SAPI in background
+            # processes, but PortAudio output works).
+            prompt_listening(args.tts_command or None, args.language)
             try:
                 request_audio = record_until_silence(
                     QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
@@ -470,7 +501,7 @@ def main() -> int:
                 token,
                 # The helper speaks the reply itself; do not duplicate it in
                 # the kiosk when the query came from the microphone helper.
-                {"text": query, "speak": False},
+                {"text": query, "speak": True},
             )
         except (urllib.error.URLError, TimeoutError, ValueError) as error:
             print(f"[wakeword] agent query failed: {error}", file=sys.stderr)
@@ -487,6 +518,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
