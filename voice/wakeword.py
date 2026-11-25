@@ -185,6 +185,7 @@ def record_until_silence(
     chunk = 0.1
     blocks: list[np.ndarray] = []
     silent_for = 0.0
+    speech_started = False
     deadline = time.monotonic() + max_seconds
     while time.monotonic() < deadline:
         block = sd.rec(
@@ -198,10 +199,14 @@ def record_until_silence(
         mono = block.flatten()
         blocks.append(mono.copy())
         if rms(mono) < threshold:
-            silent_for += chunk
-            if silent_for >= silence_seconds and len(blocks) > 10:
-                break
+            if speech_started:
+                silent_for += chunk
+                if silent_for >= silence_seconds:
+                    break
+            # Before the user starts talking, keep waiting instead of stopping
+            # on the natural pause that follows the wake word.
         else:
+            speech_started = True
             silent_for = 0.0
     return np.concatenate(blocks) if blocks else np.zeros(0, dtype="float32")
 
@@ -433,6 +438,12 @@ def main() -> int:
         trailing = (outcome.get("trailing_query") or "").strip()
         query = trailing
         if not query:
+            # Let the user know the assistant is listening for the request; the
+            # prompt plays in their headset, not through room speakers.
+            speak(
+                args.tts_command or None,
+                "Te escucho." if args.language == "es" else "I'm listening.",
+            )
             try:
                 request_audio = record_until_silence(
                     QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
