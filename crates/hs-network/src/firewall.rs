@@ -595,6 +595,39 @@ pub async fn apply(plan: &FirewallPlan, target_path: &Path) -> NetworkResult<()>
     Ok(())
 }
 
+/// Apply an already rendered ruleset file (used by rollback).
+///
+/// The file is re-validated before touching the kernel, so a corrupted backup
+/// cannot leave the appliance without its isolation invariants.
+///
+/// # Errors
+/// Returns [`NetworkError::Unsupported`] off Linux, [`NetworkError::Io`] when
+/// the file cannot be read and [`NetworkError::Apply`] when `nft -f` fails.
+pub async fn apply_ruleset(target_path: &Path) -> NetworkResult<()> {
+    if !cfg!(target_os = "linux") {
+        return Err(NetworkError::Unsupported(
+            "nftables can only be applied on Linux".to_owned(),
+        ));
+    }
+    let ruleset = std::fs::read_to_string(target_path)
+        .map_err(|err| NetworkError::Io(format!("failed to read {target_path:?}: {err}")))?;
+    validate_isolation(&ruleset)?;
+    let output = tokio::process::Command::new("nft")
+        .arg("-f")
+        .arg(target_path)
+        .output()
+        .await
+        .map_err(|err| NetworkError::Apply(format!("failed to run `nft -f`: {err}")))?;
+    if !output.status.success() {
+        return Err(NetworkError::Apply(format!(
+            "`nft -f {}` failed: {}",
+            target_path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(())
+}
+
 /// Validate a Linux network interface name used inside the ruleset.
 fn validate_bridge_name(name: &str, field: &str) -> NetworkResult<()> {
     let valid = !name.is_empty()

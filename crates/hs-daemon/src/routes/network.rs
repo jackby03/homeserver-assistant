@@ -26,6 +26,8 @@ pub fn router() -> Router<SharedState> {
         .route("/network/dmz", put(update_dmz))
         .route("/network/firewall", get(get_firewall))
         .route("/network/firewall/apply", post(apply_firewall))
+        .route("/network/firewall/history", get(firewall_history))
+        .route("/network/firewall/rollback", post(rollback_firewall))
 }
 
 /// Addressing update payload used by the network page.
@@ -101,6 +103,17 @@ pub struct FirewallResponse {
     pub ruleset: String,
     /// Last applied timestamp (RFC3339), if any.
     pub last_applied_at: Option<String>,
+}
+
+/// A saved firewall ruleset that can be restored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirewallBackup {
+    /// Backup file name.
+    pub name: String,
+    /// Modification timestamp (RFC3339).
+    pub modified_at: String,
+    /// File size in bytes.
+    pub size_bytes: u64,
 }
 
 /// DNS probe result.
@@ -220,6 +233,7 @@ async fn apply_firewall(
     let target = state.daemon.data_dir.join("firewall").join("nftables.conf");
     let ruleset = firewall::render_nftables(&plan);
     firewall::validate_isolation(&ruleset).map_err(HttpError::from)?;
+    let backup = backup_current_ruleset(&state, &target)?;
     firewall::apply(&plan, &target)
         .await
         .map_err(HttpError::from)?;
@@ -234,11 +248,130 @@ async fn apply_firewall(
         None,
         AuditOutcome::Success,
         None,
-        Some(serde_json::json!({"path": target.display().to_string()})),
+        Some(serde_json::json!({
+            "path": target.display().to_string(),
+            "backup": backup,
+        })),
     );
     Ok(Json(serde_json::json!({
         "applied": true,
         "rules_count": ruleset.lines().filter(|line| line.contains("counter")).count(),
+        "applied_at": now,
+        "backup": backup,
+    })))
+}
+
+fn firewall_backup_dir(state: &SharedState) -> std::path::PathBuf {
+    state.daemon.data_dir.join("firewall").join("backups")
+}
+
+fn backup_current_ruleset(
+    state: &SharedState,
+    target: &std::path::Path,
+) -> HttpResult<Option<String>> {
+    if !target.exists() {
+        return Ok(None);
+    }
+    let directory = firewall_backup_dir(state);
+    std::fs::create_dir_all(&directory).map_err(|error| {
+        HttpError::internal(format!("cannot create firewall backup directory: {error}"))
+    })?;
+    let name = format!(
+        "nftables-{}.conf",
+        chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ")
+    );
+    std::fs::copy(target, directory.join(&name)).map_err(|error| {
+        HttpError::internal(format!("cannot back up the current firewall: {error}"))
+    })?;
+    Ok(Some(name))
+}
+
+/// `GET /api/v1/network/firewall/history`
+async fn firewall_history(
+    State(state): State<SharedState>,
+    auth: AdminAuth,
+) -> HttpResult<Json<Vec<FirewallBackup>>> {
+    auth.require(Permission::NetworkRead)?;
+    let directory = firewall_backup_dir(&state);
+    let mut backups: Vec<(std::time::SystemTime, FirewallBackup)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&directory) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("conf") {
+                continue;
+            }
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            let Ok(modified) = metadata.modified() else {
+                continue;
+            };
+            let modified_at: chrono::DateTime<chrono::Utc> = modified.into();
+            backups.push((
+                modified,
+                FirewallBackup {
+                    name: entry.file_name().to_string_lossy().into_owned(),
+                    modified_at: modified_at.to_rfc3339(),
+                    size_bytes: metadata.len(),
+                },
+            ));
+        }
+    }
+    backups.sort_by(|left, right| right.0.cmp(&left.0));
+    backups.truncate(30);
+    Ok(Json(
+        backups.into_iter().map(|(_, backup)| backup).collect(),
+    ))
+}
+
+/// `POST /api/v1/network/firewall/rollback`
+async fn rollback_firewall(
+    State(state): State<SharedState>,
+    auth: AdminAuth,
+) -> HttpResult<Json<serde_json::Value>> {
+    auth.require(Permission::NetworkManage)?;
+    let directory = firewall_backup_dir(&state);
+    let latest = std::fs::read_dir(&directory)
+        .ok()
+        .and_then(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
+                    entry.path().extension().and_then(|value| value.to_str()) == Some("conf")
+                })
+                .filter_map(|entry| {
+                    let modified = entry.metadata().ok()?.modified().ok()?;
+                    Some((modified, entry.path()))
+                })
+                .max_by_key(|(modified, _)| *modified)
+                .map(|(_, path)| path)
+        })
+        .ok_or_else(|| HttpError::bad_request("no firewall backup is available"))?;
+    let target = state.daemon.data_dir.join("firewall").join("nftables.conf");
+    std::fs::copy(&latest, &target)
+        .map_err(|error| HttpError::internal(format!("cannot restore backup: {error}")))?;
+    firewall::apply_ruleset(&target)
+        .await
+        .map_err(HttpError::from)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    state
+        .db
+        .set_meta("network.firewall_last_applied", &now)
+        .map_err(HttpError::from)?;
+    let name = latest
+        .file_name()
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    state.audit(
+        &auth.user().username,
+        "network.firewall_rollback",
+        None,
+        AuditOutcome::Success,
+        None,
+        Some(serde_json::json!({"backup": name})),
+    );
+    Ok(Json(serde_json::json!({
+        "rolled_back_to": name,
         "applied_at": now,
     })))
 }

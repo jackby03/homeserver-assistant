@@ -4,10 +4,12 @@ import {
   Ban,
   CheckCircle2,
   Globe2,
+  History,
   Link2,
   Network,
   Plus,
   RefreshCw,
+  RotateCcw,
   Router,
   ShieldAlert,
   ShieldCheck,
@@ -21,6 +23,7 @@ import type {
   DmzConfig,
   DnsConfig,
   DnsTestResponse,
+  FirewallBackup,
   FirewallStatusResponse,
   NetworkInterface,
   NetworkMode,
@@ -63,6 +66,10 @@ export function NetworkPage(): React.JSX.Element {
   const [refreshToken, setRefreshToken] = useState(0);
   const view = useResource(() => networkApi.view(), [refreshToken]);
   const firewall = useResource<FirewallStatusResponse>(() => networkApi.firewall(), [refreshToken]);
+  const firewallHistory = useResource<FirewallBackup[]>(
+    () => networkApi.firewallHistory(),
+    [refreshToken],
+  );
 
   const [hydrated, setHydrated] = useState(false);
   const [interfaceName, setInterfaceName] = useState('eth0');
@@ -80,6 +87,7 @@ export function NetworkPage(): React.JSX.Element {
   const [savingDns, setSavingDns] = useState(false);
   const [savingDmz, setSavingDmz] = useState(false);
   const [applyingFirewall, setApplyingFirewall] = useState(false);
+  const [rollingBackFirewall, setRollingBackFirewall] = useState(false);
   const [testingDns, setTestingDns] = useState(false);
   const [dnsResult, setDnsResult] = useState<DnsTestResponse | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -199,10 +207,28 @@ export function NetworkPage(): React.JSX.Element {
         message: t('net.toast.firewallApplied', { count: result.rules_count }),
       });
       firewall.reload();
+      firewallHistory.reload();
     } catch (cause) {
       toast.push({ level: 'error', title: t('toast.error'), message: t(errorMessageKey(cause)) });
     } finally {
       setApplyingFirewall(false);
+    }
+  };
+
+  const rollbackFirewall = async (): Promise<void> => {
+    setRollingBackFirewall(true);
+    try {
+      const result = await networkApi.rollbackFirewall();
+      toast.push({
+        level: 'success',
+        message: t('net.toast.firewallRolledBack', { name: result.rolled_back_to }),
+      });
+      firewall.reload();
+      firewallHistory.reload();
+    } catch (cause) {
+      toast.push({ level: 'error', title: t('toast.error'), message: t(errorMessageKey(cause)) });
+    } finally {
+      setRollingBackFirewall(false);
     }
   };
 
@@ -614,22 +640,34 @@ export function NetworkPage(): React.JSX.Element {
           </div>
         </section>
 
-        <section className="glass space-y-3 p-5 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
+        <section className="glass space-y-4 p-5 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-[15px] font-medium text-ink-100">{t('net.firewall.title')}</h2>
               <p className="text-[11px] text-ink-500">{t('net.firewall.subtitle')}</p>
             </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm shrink-0"
-              onClick={() => void applyFirewall()}
-              disabled={applyingFirewall}
-            >
-              {applyingFirewall ? <Spinner size={14} className="text-[#04121a]" /> : <Zap size={14} />}
-              {applyingFirewall ? t('net.firewall.applying') : t('net.firewall.apply')}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm shrink-0"
+                onClick={() => void rollbackFirewall()}
+                disabled={rollingBackFirewall || (firewallHistory.data?.length ?? 0) === 0}
+              >
+                {rollingBackFirewall ? <Spinner size={14} /> : <RotateCcw size={14} />}
+                {t('net.firewall.rollback')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm shrink-0"
+                onClick={() => void applyFirewall()}
+                disabled={applyingFirewall}
+              >
+                {applyingFirewall ? <Spinner size={14} className="text-[#04121a]" /> : <Zap size={14} />}
+                {applyingFirewall ? t('net.firewall.applying') : t('net.firewall.apply')}
+              </button>
+            </div>
           </div>
+
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-500">
             <StatusPill
               label={t('net.firewall.rulesCount', { count: countRules(firewall.data) })}
@@ -642,11 +680,58 @@ export function NetworkPage(): React.JSX.Element {
                 : t('net.firewall.never')}
             </span>
           </div>
-          <pre className="max-h-[260px] overflow-auto rounded-xl border border-white/[0.06] bg-[#040810] p-3.5 font-mono text-[10.5px] leading-relaxed text-ink-300">
-            {firewall.data !== null && firewall.data.ruleset.trim() !== ''
-              ? firewall.data.ruleset
-              : t('net.firewall.empty')}
-          </pre>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              ['inputDrop', t('net.firewall.check.inputDrop')],
+              ['forwardDrop', t('net.firewall.check.forwardDrop')],
+              ['dmzIsolation', t('net.firewall.check.dmzIsolation')],
+              ['adminLan', t('net.firewall.check.adminLan')],
+            ].map(([id, label]) => (
+              <div
+                key={String(id)}
+                className="flex items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+              >
+                <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-mint-300" />
+                <span className="text-[11.5px] leading-snug text-ink-300">{label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+              <History size={13} className="text-mint-400" />
+              {t('net.firewall.history')}
+            </div>
+            {(firewallHistory.data?.length ?? 0) === 0 ? (
+              <p className="mt-2 text-[11.5px] text-ink-500">{t('net.firewall.noBackups')}</p>
+            ) : (
+              <ul className="mt-2 space-y-1.5">
+                {firewallHistory.data?.slice(0, 4).map((backup) => (
+                  <li
+                    key={backup.name}
+                    className="flex items-center justify-between gap-2 text-[11px] text-ink-400"
+                  >
+                    <span className="truncate font-mono">{backup.name}</span>
+                    <span className="shrink-0 text-ink-600">
+                      {formatDateTime(backup.modified_at, language)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <details className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+              {t('net.firewall.viewRules')}
+            </summary>
+            <pre className="mt-2 max-h-[260px] overflow-auto rounded-lg border border-white/[0.05] bg-[#040810] p-3 font-mono text-[10.5px] leading-relaxed text-ink-300">
+              {firewall.data !== null && firewall.data.ruleset.trim() !== ''
+                ? firewall.data.ruleset
+                : t('net.firewall.empty')}
+            </pre>
+          </details>
         </section>
       </div>
     </div>

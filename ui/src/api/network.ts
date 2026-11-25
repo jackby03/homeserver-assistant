@@ -5,6 +5,7 @@ import type {
   DnsProviderInfo,
   DnsTestResponse,
   FirewallApplyResponse,
+  FirewallBackup,
   FirewallStatusResponse,
   NetworkMode,
   NetworkViewResponse,
@@ -38,6 +39,12 @@ export const networkApi = {
   firewall: (): Promise<FirewallStatusResponse> =>
     http.get<FirewallStatusResponse>('/network/firewall'),
 
+  firewallHistory: (): Promise<FirewallBackup[]> =>
+    http.get<FirewallBackup[]>('/network/firewall/history'),
+
+  rollbackFirewall: (): Promise<{ rolled_back_to: string; applied_at: string }> =>
+    http.post<{ rolled_back_to: string; applied_at: string }>('/network/firewall/rollback'),
+
   applyFirewall: (): Promise<FirewallApplyResponse> =>
     http.post<FirewallApplyResponse>('/network/firewall/apply'),
 
@@ -47,3 +54,4 @@ export const networkApi = {
   dnsProviders: (): Promise<DnsProviderInfo[]> =>
     http.get<DnsProviderInfo[]>('/network/dns/providers'),
 };
+

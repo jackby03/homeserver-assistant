@@ -38,6 +38,7 @@ import type {
   MusicState,
   NetworkHealth,
   Profile,
+  ToolTraceEntry,
   TrackingPoint,
 } from '@/api/types';
 import { ReconnectingSocket } from '@/api/ws';
@@ -145,6 +146,7 @@ export function KioskPage(): React.JSX.Element {
   const [talkOpen, setTalkOpen] = useState(false);
   const [queryText, setQueryText] = useState('');
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
+  const [agentTrace, setAgentTrace] = useState<ToolTraceEntry[]>([]);
   const [conversation, setConversation] = useState<KioskHistoryEntry[]>([]);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -584,6 +586,7 @@ export function KioskPage(): React.JSX.Element {
     if (text === '' || querying) return;
     setQuerying(true);
     setQueryText('');
+    setAgentTrace([]);
     pushChat('user', text);
     setAvatarState('thinking');
     setLive((current) => ({ ...current, agentActivity: 'thinking' }));
@@ -597,6 +600,7 @@ export function KioskPage(): React.JSX.Element {
           { role: 'assistant' as const, content: response.reply },
         ].slice(-24),
       );
+      setAgentTrace(response.tool_trace ?? []);
       pushChat('assistant', response.reply);
       speakReply(response.reply);
       setLive((current) => ({ ...current, agentActivity: 'speaking' }));
@@ -1434,6 +1438,24 @@ export function KioskPage(): React.JSX.Element {
                   {micState === 'denied' ? t('kiosk.micRetry') : t('kiosk.enableMic')}
                 </button>
               </div>
+            ) : null}
+
+            {agentTrace.length > 0 ? (
+              <details className="mt-2 rounded-xl border border-white/[0.07] bg-white/[0.03] px-2.5 py-2 text-[10px] text-ink-400">
+                <summary className="cursor-pointer select-none">
+                  {t('kiosk.agentTrace', { count: agentTrace.length })}
+                </summary>
+                <ul className="mt-1.5 space-y-1">
+                  {agentTrace.map((entry, index) => (
+                    <li key={`${entry.tool}-${index}`} className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono text-[9.5px] text-ink-300">{entry.tool}</span>
+                      <span className={entry.error === null ? 'text-mint-300/70' : 'text-coral-300'}>
+                        {entry.error === null ? `${entry.duration_ms} ms` : 'error'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             ) : null}
 
             {talkOpen ? (
