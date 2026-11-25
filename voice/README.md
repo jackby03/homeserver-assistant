@@ -137,6 +137,25 @@ python3 voice/wakeword.py --tts-command "piper --model /opt/piper/es_ES-sharvard
 The helper prints the local transcripts and the assistant replies to the
 console in English.
 
+## Kiosk push-to-talk (recommended on Windows)
+
+The wall kiosk has a microphone button in the left chat panel. It records with
+**Chrome's MediaRecorder** (the same Windows capture path as Audacity) and posts
+the audio to a loopback STT server, so it does not depend on PortAudio's
+DirectSound/MME/WASAPI stream quirks for the G435.
+
+```bash
+HF_HOME=/var/lib/homecore/hf python3 voice/stt_server.py
+```
+
+It listens on `127.0.0.1:5055`, decodes in memory with PyAV, transcribes with the
+same faster-whisper `base` model and returns `{"text": "..."}`. The kiosk then
+sends that transcript through the normal local/LLM agent route. Audio is never
+written to disk and leaves nothing but the loopback request.
+
+On this Windows demo the server is already running:
+`.\.demo\voice-venv\Scripts\python.exe voice\stt_server.py`.
+
 ## Windows development demo (local microphone)
 
 On a Windows development machine the same helper runs against the dev daemon:
@@ -205,6 +224,7 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 
 
 

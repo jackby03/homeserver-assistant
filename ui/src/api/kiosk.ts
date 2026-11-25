@@ -72,3 +72,29 @@ export const kioskApi = {
     ),
 };
 
+
+
+const STT_BASE_URL = (
+  (import.meta.env as Record<string, string | undefined>).VITE_STT_URL ??
+  'http://127.0.0.1:5055'
+).replace(/\/$/, '');
+
+/**
+ * Send a browser microphone recording to the loopback STT server.
+ *
+ * Chrome/MediaRecorder uses the same Windows capture path as Audacity, so it
+ * works with the G435 where PortAudio's DirectSound/MME streams were corrupt.
+ */
+export async function transcribeKioskAudio(blob: Blob): Promise<string> {
+  const response = await fetch(`${STT_BASE_URL}/transcribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+    body: blob,
+  });
+  if (!response.ok) {
+    throw new Error(`local STT failed (HTTP ${response.status})`);
+  }
+  const data = (await response.json()) as { text?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  return (data.text ?? '').trim();
+}
