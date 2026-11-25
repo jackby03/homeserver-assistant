@@ -454,6 +454,10 @@ export function KioskPage(): React.JSX.Element {
 
     const socket = new ReconnectingSocket<KioskEvent>('/kiosk/events', {
       onStatus: setWsStatus,
+      onOpen: () => {
+        lastEventAt.current = Date.now();
+        reloadState();
+      },
       onMessage: (raw) => {
         if (!isKioskEvent(raw)) return;
         lastEventAt.current = Date.now();
@@ -464,7 +468,7 @@ export function KioskPage(): React.JSX.Element {
     return () => socket.close();
     // Setters and refs are stable; the toast push callback is stable too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDemo, pushToast, t]);
+  }, [isDemo, pushToast, t, reloadState]);
 
   /* Actions ----------------------------------------------------------------- */
 
