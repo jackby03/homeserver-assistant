@@ -1047,7 +1047,7 @@ export function KioskPage(): React.JSX.Element {
         </div>
 
         {automationOpen ? (
-          <aside className="fixed bottom-4 right-4 top-20 z-40 w-[min(92vw,380px)] overflow-y-auto rounded-[28px] border border-white/10 bg-[#08111d]/95 p-4 shadow-2xl backdrop-blur-xl">
+          <aside className="fixed bottom-24 right-4 top-28 z-40 w-[min(92vw,380px)] overflow-y-auto rounded-[28px] border border-white/10 bg-[#08111d]/95 p-4 shadow-2xl backdrop-blur-xl">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">
