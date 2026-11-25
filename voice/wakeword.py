@@ -222,7 +222,7 @@ def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | N
             f"[wakeword] input [{index:2d}] stream peak={level:.6f} "
             f"{device['name']}"
         )
-        if level > 0.0002 and (best is None or level > best[0]):
+        if best is None or level > best[0]:
             best = (level, index)
     if best is None:
         print(
@@ -230,6 +230,12 @@ def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | N
             file=sys.stderr,
         )
         return None
+    if best[0] < 0.0002:
+        print(
+            "[wakeword] WARNING: selected microphone is almost silent. "
+            "Check the headset is on, unmuted and its mic boom is down.",
+            file=sys.stderr,
+        )
     print(f"[wakeword] auto-selected input device [{best[1]}]")
     return best[1], best[0]
 
@@ -364,11 +370,14 @@ def record_utterance(
         level = rms(mono)
         peak = max(peak, level)
         probability = vad.probability(mono) if vad is not None else None
-        is_speech = (
-            probability >= 0.5 if probability is not None else level >= threshold
+        energy_gate = max(threshold * 1.5, 0.002)
+        # Silero alone is not reliable on every host/model build; combine it with
+        # an energy gate from the MME stream so clear speech is never ignored.
+        is_speech = (probability is not None and probability >= 0.5) or (
+            level >= energy_gate
         )
-        quiet_frame = (
-            probability < 0.35 if probability is not None else level < threshold
+        quiet_frame = (probability is None or probability < 0.35) and (
+            level < energy_gate
         )
         if not speech_started:
             pre.append(mono)
@@ -377,7 +386,9 @@ def record_utterance(
             if is_speech:
                 speech_started = True
                 detail = (
-                    f"vad={probability:.2f}" if probability is not None else f"rms={level:.5f}"
+                    f"vad={probability:.2f}, rms={level:.5f}"
+                    if probability is not None
+                    else f"rms={level:.5f}"
                 )
                 print(f"[wakeword] speech detected ({detail})")
                 utterance = [*pre, mono]
