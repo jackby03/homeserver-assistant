@@ -98,6 +98,15 @@ Female Spanish voices in Piper: `es_MX-claude-high` (Mexico, female, high
 quality) and `es_ES-mls_9972-low` (Spain, female, low). The tested demo voice is
 `es_MX-claude-high` (`63 MB`, ~2 s synthesis on CPU).
 
+## Low-latency wake detection
+
+The listener does not wait for fixed 2.4 s windows. It streams 100 ms frames
+with a small pre-roll, detects speech onset by RMS and transcribes as soon as the
+user stops talking (0.45 s of trailing silence). The wake phrase uses beam size 1
+while requests keep beam size 3, so the chime typically arrives ~1 s after
+"Oye Aura" instead of 3-4 s. Tune with `--wake-beam-size`, `--model` and the
+device threshold; the log prints both the transcription time and the total flow.
+
 ## Continuous conversation
 
 After the first wake word the helper keeps listening for follow-ups without
@@ -196,6 +205,7 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 
 
 

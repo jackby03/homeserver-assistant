@@ -51,7 +51,9 @@ except ImportError as error:  # pragma: no cover - dependency guidance
 SAMPLE_RATE = 16_000
 DEFAULT_CONFIG = Path("/var/lib/homecore/config.json")
 DEFAULT_URL = "http://127.0.0.1:3000"
-WAKE_WINDOW_SECONDS = 2.4
+WAKE_MAX_SECONDS = 4.0
+WAKE_SILENCE_SECONDS = 0.45
+WAKE_IDLE_TIMEOUT = 5.0
 QUERY_MAX_SECONDS = 9.0
 SILENCE_SECONDS = 1.2
 DEFAULT_THRESHOLD = 0.004
@@ -179,6 +181,62 @@ def record_window(seconds: float, device: str | int | None) -> np.ndarray:
     return audio.flatten()
 
 
+def record_utterance(
+    device: str | int | None,
+    threshold: float,
+    idle_timeout: float = WAKE_IDLE_TIMEOUT,
+) -> np.ndarray | None:
+    """Stream frames until speech + trailing silence; None on idle timeout.
+
+    This replaces fixed 2.4 s windows: the wake phrase is transcribed as soon as
+    the user stops speaking (0.45 s of silence), which removes ~1.5-2 s of
+    latency from the voice UI. A small pre-roll keeps the beginning intact.
+    """
+    chunk = 0.1
+    preroll_frames = 4  # 0.4 s before speech onset
+    silence = WAKE_SILENCE_SECONDS
+    deadline = time.monotonic() + idle_timeout
+    pre: list[np.ndarray] = []
+    utterance: list[np.ndarray] = []
+    speech_started = False
+    quiet = 0.0
+    speech_time = 0.0
+    while True:
+        block = sd.rec(
+            int(chunk * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype="float32",
+            device=device,
+        )
+        sd.wait()
+        mono = block.flatten()
+        level = rms(mono)
+        if not speech_started:
+            pre.append(mono)
+            if len(pre) > preroll_frames:
+                pre.pop(0)
+            if level >= threshold:
+                speech_started = True
+                utterance = [*pre, mono]
+                pre.clear()
+                speech_time = chunk
+                quiet = 0.0
+            elif time.monotonic() >= deadline:
+                return None
+            continue
+        utterance.append(mono)
+        if level < threshold:
+            quiet += chunk
+        else:
+            quiet = 0.0
+            speech_time += chunk
+        if quiet >= silence and speech_time >= 0.3:
+            return np.concatenate(utterance)
+        if len(utterance) * chunk >= WAKE_MAX_SECONDS:
+            return np.concatenate(utterance)
+
+
 def record_until_silence(
     max_seconds: float,
     silence_seconds: float,
@@ -236,6 +294,7 @@ def transcribe(
     language: str,
     initial_prompt: str | None = None,
     beam_size: int = 3,
+    vad_filter: bool = True,
 ) -> str:
     """Transcribe a window locally; model/driver failures must not kill the loop."""
     try:
@@ -244,7 +303,7 @@ def transcribe(
             audio,
             language=language if language in {"es", "en"} else None,
             beam_size=beam_size,
-            vad_filter=True,
+            vad_filter=vad_filter,
             condition_on_previous_text=False,
             initial_prompt=initial_prompt,
         )
@@ -437,7 +496,13 @@ def main() -> int:
         help="Whisper prompt bias; defaults to the assistant name",
     )
     parser.add_argument(
-        "--beam-size", type=int, default=3, help="Whisper beam size"
+        "--beam-size", type=int, default=3, help="Whisper beam size for requests"
+    )
+    parser.add_argument(
+        "--wake-beam-size",
+        type=int,
+        default=1,
+        help="Whisper beam size for the short wake phrase (lower = faster)",
     )
     parser.add_argument(
         "--threshold",
@@ -540,15 +605,11 @@ def main() -> int:
                 pass
             last_heartbeat = now
 
-        window = record_window(WAKE_WINDOW_SECONDS, device)
-        level = rms(window)
-        if level < args.threshold:
+        window = record_utterance(device, args.threshold)
+        if window is None:
             silent_windows += 1
-            if silent_windows == 1 or silent_windows % 30 == 0:
-                print(
-                    f"[wakeword] level={level:.6f} below threshold "
-                    f"({args.threshold:.4f}); waiting for speech"
-                )
+            if silent_windows == 1 or silent_windows % 6 == 0:
+                print("[wakeword] waiting for speech...")
             if args.once:
                 print("[wakeword] silence; no wake word detected")
                 return 0
@@ -556,7 +617,12 @@ def main() -> int:
         silent_windows = 0
         started = time.monotonic()
         transcript = transcribe(
-            model, window, args.language, initial_prompt, args.beam_size
+            model,
+            window,
+            args.language,
+            initial_prompt,
+            args.wake_beam_size,
+            vad_filter=False,
         )
         elapsed = time.monotonic() - started
         if transcript:
@@ -686,6 +752,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
