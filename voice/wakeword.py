@@ -289,7 +289,10 @@ def piper_speak(executable: str, model: str, text: str) -> bool:
     import tempfile
 
     try:
-        with tempfile.TemporaryDirectory(prefix="hs-piper-") as directory:
+        tmp_root = os.environ.get("HS_TTS_TMP") or tempfile.gettempdir()
+        with tempfile.TemporaryDirectory(
+            prefix="hs-piper-", dir=tmp_root
+        ) as directory:
             wav = Path(directory) / "speech.wav"
             result = local_subprocess.run(
                 [executable, "-m", model, "-f", str(wav)],
@@ -681,6 +684,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
