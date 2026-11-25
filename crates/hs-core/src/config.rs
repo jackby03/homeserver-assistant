@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::dns::DnsProvider;
 use crate::error::{CoreError, CoreResult};
 use crate::validation;
 
@@ -46,6 +47,8 @@ pub struct SystemConfig {
     pub security: SecurityConfig,
     /// Default LLM provider used by the assistant.
     pub agent: AgentConfig,
+    /// Always-on voice assistant and wake-word activation.
+    pub voice: VoiceConfig,
     /// Wall tablet / kiosk runtime settings.
     pub kiosk: KioskConfig,
     /// Optional homeserver services.
@@ -62,6 +65,7 @@ impl Default for SystemConfig {
             audio: AudioConfig::default(),
             security: SecurityConfig::default(),
             agent: AgentConfig::default(),
+            voice: VoiceConfig::default(),
             kiosk: KioskConfig::generate(),
             services: ServicesConfig::default(),
         }
@@ -94,6 +98,7 @@ impl SystemConfig {
         self.audio.validate()?;
         self.security.validate()?;
         self.agent.validate()?;
+        self.voice.validate()?;
         self.kiosk.validate()?;
         self.services.validate()?;
         Ok(())
@@ -230,66 +235,7 @@ pub enum DnsEngine {
     Technitium,
 }
 
-/// Supported encrypted DNS upstreams.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DnsProvider {
-    /// Cloudflare standard (1.1.1.1).
-    Cloudflare,
-    /// Cloudflare malware blocking (1.1.1.2).
-    CloudflareMalware,
-    /// Cloudflare family protection (1.1.1.3).
-    CloudflareFamily,
-    /// Quad9 (9.9.9.9).
-    Quad9,
-    /// Control D free resolver.
-    ControlD,
-    /// User supplied DoH/DoT endpoint.
-    Custom,
-}
-
-impl DnsProvider {
-    /// Stable identifier used by the API and UI.
-    #[must_use]
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Cloudflare => "cloudflare",
-            Self::CloudflareMalware => "cloudflare_malware",
-            Self::CloudflareFamily => "cloudflare_family",
-            Self::Quad9 => "quad9",
-            Self::ControlD => "controld",
-            Self::Custom => "custom",
-        }
-    }
-
-    /// Human readable label.
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Cloudflare => "Cloudflare",
-            Self::CloudflareMalware => "Cloudflare Malware Blocking",
-            Self::CloudflareFamily => "Cloudflare Family",
-            Self::Quad9 => "Quad9",
-            Self::ControlD => "Control D",
-            Self::Custom => "Custom",
-        }
-    }
-
-    /// All providers, useful for building the UI selector.
-    #[must_use]
-    pub fn all() -> &'static [Self] {
-        &[
-            Self::Cloudflare,
-            Self::CloudflareMalware,
-            Self::CloudflareFamily,
-            Self::Quad9,
-            Self::ControlD,
-            Self::Custom,
-        ]
-    }
-}
-
-/// Encrypted DNS protocol.
+/// DNS transport used between the appliance and the upstream resolver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DnsProtocol {
@@ -297,6 +243,9 @@ pub enum DnsProtocol {
     Doh,
     /// DNS over TLS.
     Dot,
+    /// Plain DNS on port 53. Only offered for legacy providers without an
+    /// encrypted endpoint; the UI marks it as unencrypted.
+    Plain,
 }
 
 impl DnsProtocol {
@@ -306,7 +255,14 @@ impl DnsProtocol {
         match self {
             Self::Doh => "doh",
             Self::Dot => "dot",
+            Self::Plain => "plain",
         }
+    }
+
+    /// Whether the transport is encrypted.
+    #[must_use]
+    pub fn is_encrypted(self) -> bool {
+        matches!(self, Self::Doh | Self::Dot)
     }
 }
 
@@ -318,11 +274,11 @@ pub struct DnsConfig {
     pub enabled: bool,
     /// Filtering engine to deploy.
     pub engine: DnsEngine,
-    /// Encrypted upstream provider.
+    /// Upstream provider (validated catalog id).
     pub provider: DnsProvider,
     /// Transport used towards the upstream.
     pub protocol: DnsProtocol,
-    /// Custom DoH URL or DoT host when `provider == custom`.
+    /// Custom DoH URL / DoT host for `custom`, or the NextDNS configuration id.
     pub custom_upstream: Option<String>,
     /// Dynamic blocklist URLs (ads, trackers, malware).
     pub blocklists: Vec<String>,
@@ -333,7 +289,7 @@ impl Default for DnsConfig {
         Self {
             enabled: true,
             engine: DnsEngine::AdGuardHome,
-            provider: DnsProvider::Cloudflare,
+            provider: DnsProvider::cloudflare(),
             protocol: DnsProtocol::Doh,
             custom_upstream: None,
             blocklists: vec![
@@ -348,10 +304,29 @@ impl DnsConfig {
     /// Validate DNS settings.
     ///
     /// # Errors
-    /// Returns [`CoreError::Validation`] when a field is invalid.
+    /// Returns [`CoreError::Validation`] when a field is invalid, the provider
+    /// does not support the selected transport, or a required custom/NextDNS
+    /// configuration id is missing.
     pub fn validate(&self) -> CoreResult<()> {
-        if self.provider == DnsProvider::Custom {
-            let Some(upstream) = &self.custom_upstream else {
+        if self.provider.spec().is_none() {
+            return Err(CoreError::validation(
+                "provider",
+                format!("unknown DNS provider `{}`", self.provider),
+            ));
+        }
+        if !self.provider.supports(self.protocol) {
+            return Err(CoreError::validation(
+                "protocol",
+                format!(
+                    "provider `{}` does not support the `{}` transport",
+                    self.provider,
+                    self.protocol.id()
+                ),
+            ));
+        }
+
+        if self.provider.is_custom() {
+            let Some(upstream) = self.custom_upstream.as_deref() else {
                 return Err(CoreError::validation(
                     "custom_upstream",
                     "is required when provider is custom",
@@ -367,8 +342,33 @@ impl DnsConfig {
                         ));
                     }
                 }
+                DnsProtocol::Plain => {
+                    validation::ipv4(upstream)?;
+                }
+            }
+        } else if self.provider.requires_config_id() {
+            let Some(id) = self.custom_upstream.as_deref() else {
+                return Err(CoreError::validation(
+                    "custom_upstream",
+                    format!(
+                        "provider `{}` requires your configuration id",
+                        self.provider.label()
+                    ),
+                ));
+            };
+            let id = id.trim();
+            if !(4..=32).contains(&id.len())
+                || !id
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+            {
+                return Err(CoreError::validation(
+                    "custom_upstream",
+                    "configuration id must be 4-32 letters, digits or hyphens",
+                ));
             }
         }
+
         for url in &self.blocklists {
             validation::http_url(url)?;
         }
@@ -642,6 +642,95 @@ impl AgentConfig {
     }
 }
 
+/// How the household can start a conversation with the assistant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceActivationMode {
+    /// Always-on listener: call the assistant by name to start a request.
+    WakeWord,
+    /// Only the kiosk "talk" button starts a request (no microphone hotword).
+    PushToTalk,
+    /// Both wake word and push-to-talk are available.
+    Both,
+}
+
+impl VoiceActivationMode {
+    /// Stable identifier used by the API and the UI.
+    #[must_use]
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::WakeWord => "wake_word",
+            Self::PushToTalk => "push_to_talk",
+            Self::Both => "both",
+        }
+    }
+}
+
+/// Always-on voice assistant configuration.
+///
+/// The name is the wake word: the household says `"Oye Aura, ..."` and the
+/// daemon matches the transcript locally. Audio never leaves the appliance; an
+/// optional local STT helper produces the transcript.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VoiceConfig {
+    /// Name the household calls the assistant by (`Aura`, `Casa`, `Jarvis`).
+    pub assistant_name: String,
+    /// Whether the always-on wake-word listener is active.
+    pub wake_word_enabled: bool,
+    /// Wake-word, push-to-talk or both.
+    pub activation_mode: VoiceActivationMode,
+    /// Wake-word sensitivity in `0.0..=1.0` (higher tolerates more STT typos).
+    pub sensitivity: f32,
+    /// Seconds the assistant keeps listening for the request after being called.
+    pub listening_window_secs: u8,
+    /// Language of the local speech recognition pipeline (`es` or `en`).
+    pub language: String,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            assistant_name: "Aura".to_owned(),
+            wake_word_enabled: true,
+            activation_mode: VoiceActivationMode::Both,
+            sensitivity: 0.6,
+            listening_window_secs: 8,
+            language: "es".to_owned(),
+        }
+    }
+}
+
+impl VoiceConfig {
+    /// Validate voice-assistant settings.
+    ///
+    /// # Errors
+    /// Returns [`CoreError::Validation`] when a field is invalid.
+    pub fn validate(&self) -> CoreResult<()> {
+        validation::assistant_name(&self.assistant_name)?;
+        validation::language(&self.language)?;
+        if !self.sensitivity.is_finite() || !(0.0..=1.0).contains(&self.sensitivity) {
+            return Err(CoreError::validation(
+                "voice.sensitivity",
+                "must be between 0.0 and 1.0",
+            ));
+        }
+        if !(3..=60).contains(&self.listening_window_secs) {
+            return Err(CoreError::validation(
+                "voice.listening_window_secs",
+                "must be between 3 and 60 seconds",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Phrase the household should say to wake the assistant, e.g. `"Oye Aura"`.
+    #[must_use]
+    pub fn wake_phrase(&self) -> String {
+        format!("Oye {}", self.assistant_name.trim())
+    }
+}
+
 /// Wall tablet / kiosk configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -819,7 +908,7 @@ mod tests {
     #[test]
     fn custom_dns_requires_upstream() {
         let mut config = valid_config();
-        config.network.dns.provider = DnsProvider::Custom;
+        config.network.dns.provider = DnsProvider::custom();
         assert!(config.validate().is_err());
         config.network.dns.custom_upstream = Some("https://dns.example.com/dns-query".to_owned());
         config.validate().expect("custom dns should be valid");
@@ -831,6 +920,34 @@ mod tests {
         let b = KioskConfig::generate();
         assert_ne!(a.token, b.token);
         assert_eq!(a.token.len(), 64);
+    }
+
+    #[test]
+    fn voice_defaults_are_valid_and_customizable() {
+        let mut config = valid_config();
+        assert_eq!(config.voice.assistant_name, "Aura");
+        assert_eq!(config.voice.wake_phrase(), "Oye Aura");
+        config.voice.assistant_name = "Jarvis".to_owned();
+        config.voice.sensitivity = 0.9;
+        config.voice.activation_mode = VoiceActivationMode::WakeWord;
+        config.validate().expect("custom voice config is valid");
+        assert_eq!(config.voice.wake_phrase(), "Oye Jarvis");
+    }
+
+    #[test]
+    fn rejects_invalid_voice_settings() {
+        let mut config = valid_config();
+        config.voice.assistant_name = "x".to_owned();
+        assert!(config.validate().is_err());
+        config.voice.assistant_name = "Aura".to_owned();
+        config.voice.sensitivity = 1.5;
+        assert!(config.validate().is_err());
+        config.voice.sensitivity = 0.5;
+        config.voice.listening_window_secs = 2;
+        assert!(config.validate().is_err());
+        config.voice.listening_window_secs = 8;
+        config.voice.language = "fr".to_owned();
+        assert!(config.validate().is_err());
     }
 
     #[test]

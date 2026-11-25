@@ -116,6 +116,7 @@ export function KioskPage(): React.JSX.Element {
     network: initial?.network ?? EMPTY_NETWORK,
     agentActivity: initial?.agent_activity ?? 'idle',
   });
+  const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Aura');
   const [avatarState, setAvatarState] = useState<AvatarState>('idle');
   const [tracking, setTracking] = useState<TrackingPoint | null>(null);
   const [wsStatus, setWsStatus] = useState<SocketStatus>(isDemo ? 'open' : 'connecting');
@@ -173,6 +174,7 @@ export function KioskPage(): React.JSX.Element {
       agentActivity: snapshot.agent_activity,
     });
     setVolume(snapshot.music.volume);
+    setAssistantName(snapshot.assistant_name);
   }, []);
 
   const reloadState = useCallback(() => {
@@ -233,6 +235,16 @@ export function KioskPage(): React.JSX.Element {
           break;
         case 'network':
           setLive((current) => ({ ...current, network: event.status }));
+          break;
+        case 'wake':
+          setAssistantName(event.assistant_name);
+          setAvatarState('listening');
+          setLive((current) => ({ ...current, agentActivity: 'listening' }));
+          pushToast({
+            level: 'info',
+            title: t('kiosk.listening'),
+            message: t('kiosk.hint', { name: event.assistant_name }),
+          });
           break;
         case 'notification':
           pushToast({
@@ -496,7 +508,7 @@ export function KioskPage(): React.JSX.Element {
                   ? t('kiosk.thinking')
                   : avatarState === 'speaking'
                     ? t('kiosk.speaking')
-                    : t('kiosk.hint')}
+                    : t('kiosk.hint', { name: assistantName })}
             </p>
           </div>
         </section>
@@ -731,7 +743,7 @@ export function KioskPage(): React.JSX.Element {
       {idle ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-24 z-30 flex justify-center">
           <span className="rounded-full border border-white/[0.08] bg-night-900/70 px-4 py-2 text-[12px] text-ink-400 backdrop-blur-md">
-            {t('kiosk.pressToWake')}
+            {t('kiosk.pressToWake', { name: assistantName })}
           </span>
         </div>
       ) : null}

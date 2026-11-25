@@ -23,6 +23,7 @@ pub fn admin_router(state: SharedState) -> Router {
         .merge(routes::discovery::router())
         .merge(routes::homeassistant::router())
         .merge(routes::agent::router())
+        .merge(routes::voice::router())
         .merge(routes::profiles::router())
         .merge(routes::ws::router())
         .merge(routes::setup::router(state.clone()));

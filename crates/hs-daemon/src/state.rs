@@ -52,6 +52,8 @@ pub struct AppState {
     pub agent: Arc<AgentService>,
     /// Kiosk state machine and event bus.
     pub kiosk: Arc<KioskManager>,
+    /// Always-on voice assistant (wake-word gate and listening window).
+    pub voice: Arc<crate::voice::VoiceManager>,
     /// Admin portal broadcast bus (same bus instance as `kiosk`).
     pub events: EventBus,
     /// Last discovery scan result (merged devices).

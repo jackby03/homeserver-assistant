@@ -60,4 +60,11 @@ export const DEMO_KIOSK_STATE: KioskStateResponse = {
   ],
   network: { online: true, dns_ok: true, latency_ms: 14 },
   agent_activity: 'idle',
+  assistant_name: 'Aura',
+  voice: {
+    wake_word_enabled: true,
+    activation_mode: 'both',
+    listening: false,
+    listening_window_secs: 8,
+  },
 };

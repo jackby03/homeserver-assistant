@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import {
-  CheckCircle2,
-  Globe2,
   Network,
   Plus,
   Router,
@@ -13,20 +11,14 @@ import { setupApi } from '@/api/setup';
 import type {
   DmzConfig,
   DnsConfig,
-  DnsProvider,
   NetworkMode,
   StaticIpv4,
 } from '@/api/types';
+import { DnsProviderPicker } from '@/components/DnsProviderPicker';
 import { Field, Segmented, Toggle } from '@/components/Field';
 import { errorMessageKey, useI18n } from '@/i18n/I18nProvider';
 import { cn } from '@/lib/cn';
-import {
-  DEFAULT_DMZ_CONFIG,
-  DEFAULT_DNS_CONFIG,
-  DNS_PROVIDERS,
-  DNS_PROVIDER_DESC_KEYS,
-  DNS_PROVIDER_LABEL_KEYS,
-} from '@/lib/dns-meta';
+import { DEFAULT_DMZ_CONFIG, DEFAULT_DNS_CONFIG } from '@/lib/dns-meta';
 import { useToast } from '@/state/ToastProvider';
 import { StepError, StepFooter } from './StepChrome';
 import type { SetupSummaryPatch } from './types';
@@ -69,7 +61,10 @@ export function StepNetwork({ onNext, onBack }: StepNetworkProps): React.JSX.Ele
       }
       staticIpv4 = { address, prefix_len: prefixNumber, gateway };
     }
-    if (dns.provider === 'custom' && customUpstream.trim() === '') {
+    if (
+      (dns.provider === 'custom' || dns.provider === 'nextdns') &&
+      customUpstream.trim() === ''
+    ) {
       setError(t('net.dns.customHint'));
       return;
     }
@@ -87,7 +82,10 @@ export function StepNetwork({ onNext, onBack }: StepNetworkProps): React.JSX.Ele
         ...(staticIpv4 !== undefined ? { static_ipv4: staticIpv4 } : {}),
         dns: {
           ...dns,
-          custom_upstream: dns.provider === 'custom' ? customUpstream.trim() : null,
+          custom_upstream:
+            dns.provider === 'custom' || dns.provider === 'nextdns'
+              ? customUpstream.trim()
+              : null,
         },
         dmz,
       });
@@ -197,71 +195,27 @@ export function StepNetwork({ onNext, onBack }: StepNetworkProps): React.JSX.Ele
         </div>
 
         <div className={cn('space-y-4', !dns.enabled && 'pointer-events-none opacity-50')}>
-          <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-            {DNS_PROVIDERS.map((provider: DnsProvider) => {
-              const selected = dns.provider === provider;
-              return (
-                <button
-                  key={provider}
-                  type="button"
-                  onClick={() => setDns((current) => ({ ...current, provider }))}
-                  aria-pressed={selected}
-                  className={cn(
-                    'rounded-2xl border p-3 text-left transition duration-150',
-                    selected
-                      ? 'border-mint-400/35 bg-mint-400/[0.06]'
-                      : 'border-white/[0.07] bg-white/[0.02] hover:border-white/[0.15]',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[12.5px] font-medium text-ink-100">
-                      {t(DNS_PROVIDER_LABEL_KEYS[provider])}
-                    </span>
-                    {selected ? <CheckCircle2 size={13} className="text-mint-400" /> : null}
-                  </div>
-                  <p className="mt-1 text-[10.5px] leading-relaxed text-ink-500">
-                    {t(DNS_PROVIDER_DESC_KEYS[provider])}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+          <DnsProviderPicker
+            provider={dns.provider}
+            protocol={dns.protocol}
+            customUpstream={customUpstream}
+            disabled={!dns.enabled}
+            idPrefix="setup-dns"
+            onProviderChange={(provider) => setDns((current) => ({ ...current, provider }))}
+            onProtocolChange={(protocol) => setDns((current) => ({ ...current, protocol }))}
+            onCustomUpstreamChange={setCustomUpstream}
+          />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t('net.dns.protocol')}>
-              <Segmented
-                value={dns.protocol}
-                onChange={(protocol) => setDns((current) => ({ ...current, protocol }))}
-                options={[
-                  { value: 'doh', label: 'DoH', icon: <Globe2 size={14} /> },
-                  { value: 'dot', label: 'DoT', icon: <ShieldCheck size={14} /> },
-                ]}
-              />
-            </Field>
-            <Field label={t('net.dns.engine')} hint={t('net.dns.engineHint')}>
-              <Segmented
-                value={dns.engine}
-                onChange={(engine) => setDns((current) => ({ ...current, engine }))}
-                options={[
-                  { value: 'adguard_home', label: t('net.dns.engine.adguard_home') },
-                  { value: 'technitium', label: t('net.dns.engine.technitium') },
-                ]}
-              />
-            </Field>
-          </div>
-
-          {dns.provider === 'custom' ? (
-            <Field label={t('net.dns.customUpstream')} htmlFor="setup-custom-dns" hint={t('net.dns.customHint')}>
-              <input
-                id="setup-custom-dns"
-                className="input input-mono"
-                value={customUpstream}
-                onChange={(event) => setCustomUpstream(event.target.value)}
-                placeholder="https://dns.example.com/dns-query"
-                spellCheck={false}
-              />
-            </Field>
-          ) : null}
+          <Field label={t('net.dns.engine')} hint={t('net.dns.engineHint')}>
+            <Segmented
+              value={dns.engine}
+              onChange={(engine) => setDns((current) => ({ ...current, engine }))}
+              options={[
+                { value: 'adguard_home', label: t('net.dns.engine.adguard_home') },
+                { value: 'technitium', label: t('net.dns.engine.technitium') },
+              ]}
+            />
+          </Field>
 
           <div className="space-y-2">
             <p className="field-label">{t('net.dns.blocklists')}</p>
@@ -377,3 +331,4 @@ export function StepNetwork({ onNext, onBack }: StepNetworkProps): React.JSX.Ele
     </div>
   );
 }
+

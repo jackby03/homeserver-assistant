@@ -96,11 +96,28 @@ Browser ── HTTPS :8443 ──> Caddy (internal CA, HSTS) ── HTTP 127.0.0
 ```
 Camera ──> hs-vision (Rust, local) ── Unix socket JSON lines ──> daemon
    └─> KioskManager ──> broadcast KioskEvent ── WS :3000 ──> Avatar UI
-Microphone ──> browser VAD ──> POST /kiosk/agent/query ──> agent loop
-   └─> tools (permission-checked) ──> Home Assistant / music / runtime
+Microphone ──> local helper (voice/, local STT) ── transcript only ──>
+   POST /kiosk/wake ──> hs-core wake-word matcher ──> listening window
+   └─> browser/helper POST /kiosk/agent/query ──> agent loop
+        └─> tools (permission-checked) ──> Home Assistant / music / runtime
 ```
 
-### 4.3 Agent tool call
+### 4.3 Voice assistant (always on)
+
+- The configured assistant **name is the wake word** (`VoiceConfig.assistant_name`,
+  default `Aura`). Matching is local and transcript based: accents, case and
+  punctuation are normalized, tokens are compared (so `casamiento` does not wake
+  `Casa`) with a small typo tolerance controlled by `sensitivity`.
+- Audio capture and STT live in the optional unprivileged `voice/wakeword.py`
+  helper (faster-whisper). Only text is posted to the loopback kiosk API; audio
+  never leaves the appliance and transcripts are not persisted.
+- The daemon enforces a 1.5 s cooldown, opens a bounded listening window
+  (`listening_window_secs`), emits `KioskEvent::Wake` and keeps the avatar in the
+  `listening` state. `activation_mode` selects wake word, push-to-talk or both.
+- The kiosk hint mirrors the configured name immediately; no model retraining or
+  restart is needed to rename the assistant.
+
+### 4.4 Agent tool call
 
 ```
 POST /agent/chat {profile_id, messages}
@@ -207,3 +224,4 @@ Architecture decisions are recorded in [`docs/adr/`](adr/):
 - `0002-redb-encrypted-secrets.md` — embedded DB + AEAD vault.
 - `0003-tls-termination-at-caddy.md` — Caddy terminates TLS, daemon is loopback.
 - `0004-incus-native-runtime.md` — Incus REST over its Unix socket.
+- `0005-local-wake-word.md` — local wake word + local STT helper.

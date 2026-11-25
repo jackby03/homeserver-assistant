@@ -26,6 +26,7 @@ pub mod state;
 pub mod static_files;
 pub mod tasks;
 pub mod vision_bridge;
+pub mod voice;
 
 pub use config::DaemonConfig;
 pub use error::{HttpError, HttpResult};
@@ -33,3 +34,4 @@ pub use events::{EventBus, ServerEvent};
 pub use kiosk::KioskManager;
 pub use setup::SetupCoordinator;
 pub use state::{AppState, SharedState};
+pub use voice::{VoiceManager, VoiceStatus, WakeOutcome};

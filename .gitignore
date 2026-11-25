@@ -57,3 +57,7 @@ iso/output/
 
 # Local demo artifacts (VM/ISO screenshots and build scripts)
 /.demo/
+
+# Python
+__pycache__/
+*.pyc

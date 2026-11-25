@@ -113,6 +113,23 @@ portal, and a strict CSP. Clients must trust the local CA once (documented in
 - Killing `hs-vision` degrades the kiosk to manual mode; no other feature depends
   on the camera.
 
+## 7.1 Always-on voice assistant
+
+- Microphone audio is processed **only on the appliance**. The optional
+  `voice/wakeword.py` helper runs local speech-to-text (faster-whisper) and sends
+  only the transcript to the loopback kiosk API; audio buffers are discarded
+  after transcription and transcripts are not logged or persisted.
+- The wake-word decision runs in Rust (`hs-core::voice` + `hs-daemon::voice`):
+  the configured assistant name is normalized (case/accent-insensitive), matched
+  token-wise with optional typo tolerance, and gated by a cooldown and a bounded
+  listening window.
+- Renaming the assistant only changes configuration; no model is trained and no
+  cloud service is contacted. The kiosk token authenticates the helper, and the
+  kiosk listener is loopback-only.
+- The helper runs unprivileged (audio group); disabling `wake_word_enabled` in
+  the portal stops activation and leaves push-to-talk/agent text as the only
+  paths.
+
 ## 8. Agent and LLM data flow
 
 - The API key is read from the vault only when calling the provider and dropped

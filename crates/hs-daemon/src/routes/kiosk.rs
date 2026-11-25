@@ -39,8 +39,25 @@ pub struct KioskStateResponse {
     pub network: hs_core::events::NetworkStatus,
     /// Agent activity.
     pub agent_activity: AgentActivity,
+    /// Configured voice assistant name (wake word).
+    pub assistant_name: String,
+    /// Voice assistant runtime state.
+    pub voice: KioskVoiceState,
     /// Home Assistant scenes (best effort).
     pub scenes: Vec<SceneSummary>,
+}
+
+/// Voice assistant state mirrored by the kiosk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KioskVoiceState {
+    /// Whether the always-on wake-word listener is enabled.
+    pub wake_word_enabled: bool,
+    /// Activation mode (`wake_word`, `push_to_talk`, `both`).
+    pub activation_mode: hs_core::config::VoiceActivationMode,
+    /// Whether the post-wake listening window is open.
+    pub listening: bool,
+    /// Listening window duration in seconds.
+    pub listening_window_secs: u8,
 }
 
 /// Minimal scene descriptor for the kiosk grid.
@@ -75,6 +92,16 @@ pub struct AgentQueryBody {
     pub text: String,
 }
 
+/// Wake-word transcript produced by the local listener.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WakeBody {
+    /// Locally transcribed speech (never leaves the appliance).
+    pub transcript: String,
+    /// Optional STT confidence in `0.0..=1.0`.
+    #[serde(default)]
+    pub confidence: Option<f32>,
+}
+
 /// Volume request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeBody {
@@ -103,6 +130,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/kiosk/profile/activate", post(activate_profile))
         .route("/kiosk/listening", post(listening))
         .route("/kiosk/agent/query", post(agent_query))
+        .route("/kiosk/wake", post(wake_word))
         .route("/kiosk/music/play", post(music_play))
         .route("/kiosk/music/pause", post(music_pause))
         .route("/kiosk/music/volume", post(music_volume))
@@ -229,6 +257,8 @@ async fn build_scene_list(state: &SharedState) -> Vec<SceneSummary> {
 async fn state_snapshot(State(state): State<SharedState>) -> Json<KioskStateResponse> {
     let snapshot = state.kiosk.snapshot();
     let scenes = build_scene_list(&state).await;
+    let voice_config = state.voice.voice_config();
+    let voice_status = state.voice.status();
     Json(KioskStateResponse {
         device_name: snapshot.device_name,
         profile: snapshot.profile,
@@ -237,8 +267,49 @@ async fn state_snapshot(State(state): State<SharedState>) -> Json<KioskStateResp
         music: snapshot.music,
         network: snapshot.network,
         agent_activity: snapshot.agent_activity,
+        assistant_name: voice_config.assistant_name,
+        voice: KioskVoiceState {
+            wake_word_enabled: voice_config.wake_word_enabled,
+            activation_mode: voice_config.activation_mode,
+            listening: voice_status.listening,
+            listening_window_secs: voice_config.listening_window_secs,
+        },
         scenes,
     })
+}
+
+/// `POST /api/v1/kiosk/wake`
+///
+/// Receives a transcript from the local always-on listener, matches the
+/// configured assistant name and opens the listening window. The response is
+/// intentionally small so the helper can decide whether to keep recording the
+/// request.
+async fn wake_word(
+    State(state): State<SharedState>,
+    Json(body): Json<WakeBody>,
+) -> HttpResult<Json<crate::voice::WakeOutcome>> {
+    let transcript = body.transcript.trim();
+    if transcript.is_empty() {
+        return Err(HttpError::bad_request("transcript is required"));
+    }
+    if transcript.chars().count() > 2_000 {
+        return Err(HttpError::bad_request("transcript is too long"));
+    }
+    let outcome = state.voice.handle_transcript(transcript, body.confidence);
+    if outcome.activated {
+        state.audit(
+            "kiosk",
+            "voice.wake",
+            Some(&outcome.assistant_name),
+            hs_core::models::AuditOutcome::Success,
+            None,
+            Some(serde_json::json!({
+                "trailing_query": outcome.trailing_query.is_some(),
+                "confidence": body.confidence,
+            })),
+        );
+    }
+    Ok(Json(outcome))
 }
 
 async fn activate_profile(
@@ -275,6 +346,9 @@ async fn listening(
     } else {
         AgentActivity::Idle
     });
+    if !body.active {
+        state.voice.begin_query();
+    }
     Json(serde_json::json!({"ok": true}))
 }
 
@@ -293,6 +367,7 @@ async fn agent_query(
         ));
     };
 
+    state.voice.begin_query();
     state.kiosk.set_avatar_state(AvatarState::Thinking);
     state.kiosk.set_agent_activity(AgentActivity::Thinking);
 

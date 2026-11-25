@@ -2,6 +2,7 @@ import { http } from './client';
 import type {
   DmzConfig,
   DnsConfig,
+  DnsProviderInfo,
   DnsTestResponse,
   FirewallApplyResponse,
   FirewallStatusResponse,
@@ -41,4 +42,8 @@ export const networkApi = {
     http.post<FirewallApplyResponse>('/network/firewall/apply'),
 
   testDns: (): Promise<DnsTestResponse> => http.post<DnsTestResponse>('/network/dns/test'),
+
+  /** Complete free-DNS catalog (IPv4/IPv6/DoH/DoT), grouped by vendor in the UI. */
+  dnsProviders: (): Promise<DnsProviderInfo[]> =>
+    http.get<DnsProviderInfo[]>('/network/dns/providers'),
 };

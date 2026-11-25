@@ -25,9 +25,15 @@ infrastructure and ISO pipeline.
   mock with demo instances for development.
 - **Apps (`hs-apps`)** — catalog of eight real applications, LAN/DMZ deployment
   through the runtime, reverse-proxy route derivation and app records.
-- **Network (`hs-network`)** — Cloudflare/Quad9/ControlD/custom DNS upstreams
-  over DoH/DoT, AdGuard Home and Technitium config rendering, nftables ruleset
-  with DMZ isolation and NAT egress, netplan rendering, interface detection.
+- **Network (`hs-network`)** — data-driven free-DNS catalog with **40 variants**
+  (Cloudflare, Google, AdGuard, Quad9, CleanBrowsing, OpenDNS, NextDNS, Comodo,
+  Control D incl. 13 community lists, DNS.WATCH and custom) with IPv4/IPv6,
+  DoH/DoT/plain capabilities; AdGuard Home and Technitium config rendering,
+  nftables ruleset with DMZ isolation and NAT egress, netplan bridge rendering,
+  interface detection.
+- **Voice assistant** — always-on local wake word with customizable name,
+  sensitivity and listening window; local STT helper (`voice/wakeword.py`),
+  transcript-only wake endpoint, kiosk wake event and portal configuration.
 - **Discovery (`hs-discovery`)** — mDNS, SSDP/UPnP and ARP sources with an
   80-entry OUI vendor table and device merging.
 - **Home Assistant (`hs-homeassistant`)** — testable REST client (status,

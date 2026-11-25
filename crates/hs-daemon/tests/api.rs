@@ -431,9 +431,117 @@ async fn network_firewall_ruleset_enforces_dmz_isolation() {
         .await;
     assert_eq!(providers.status, StatusCode::OK);
     let providers = providers.body.as_array().expect("providers");
+    assert!(
+        providers.len() >= 40,
+        "the catalog must expose all researched variants"
+    );
     assert!(providers
         .iter()
         .any(|entry| entry["id"] == "cloudflare_family"));
+    let cloudflare = providers
+        .iter()
+        .find(|entry| entry["id"] == "cloudflare")
+        .expect("cloudflare entry");
+    assert!(cloudflare["ipv4"]
+        .as_array()
+        .is_some_and(|list| !list.is_empty()));
+    assert!(cloudflare["ipv6"]
+        .as_array()
+        .is_some_and(|list| !list.is_empty()));
+    assert_eq!(cloudflare["doh"], "https://cloudflare-dns.com/dns-query");
+    assert_eq!(cloudflare["vendor"]["id"], "cloudflare");
+    assert!(providers
+        .iter()
+        .any(|entry| entry["id"] == "controld_hagezi_ultimate"));
+    assert!(providers.iter().any(|entry| entry["id"] == "comodo_secure"));
+}
+
+#[tokio::test]
+async fn dns_provider_catalog_validates_transports_and_nextdns_id() {
+    let app = TestApp::spawn().await;
+    let session = app.setup_admin("admin", PASSWORD).await;
+
+    let update = |provider: &'static str, protocol: &'static str, custom: Option<&'static str>| {
+        json!({
+            "enabled": true,
+            "engine": "adguard_home",
+            "provider": provider,
+            "protocol": protocol,
+            "custom_upstream": custom,
+            "blocklists": []
+        })
+    };
+
+    // Unsupported transport for the provider.
+    let rejected = app
+        .admin(
+            Method::PUT,
+            "/api/v1/network/dns",
+            Some(update("dnswatch", "dot", None)),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(
+        rejected.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        rejected.text
+    );
+
+    // NextDNS needs the configuration id.
+    let missing_id = app
+        .admin(
+            Method::PUT,
+            "/api/v1/network/dns",
+            Some(update("nextdns", "doh", None)),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(
+        missing_id.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        missing_id.text
+    );
+
+    let nextdns = app
+        .admin(
+            Method::PUT,
+            "/api/v1/network/dns",
+            Some(update("nextdns", "doh", Some("abc123"))),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(nextdns.status, StatusCode::OK, "{}", nextdns.text);
+    assert_eq!(nextdns.body["dns"]["provider"], "nextdns");
+
+    // Legacy plain-only provider is allowed only with the plain transport.
+    let plain = app
+        .admin(
+            Method::PUT,
+            "/api/v1/network/dns",
+            Some(update("comodo_secure", "plain", None)),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(plain.status, StatusCode::OK, "{}", plain.text);
+    assert_eq!(plain.body["dns"]["protocol"], "plain");
+
+    // A community Control D filter is accepted over DoH.
+    let community = app
+        .admin(
+            Method::PUT,
+            "/api/v1/network/dns",
+            Some(update("controld_hagezi_ultimate", "doh", None)),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(community.status, StatusCode::OK, "{}", community.text);
 }
 
 #[tokio::test]
@@ -651,6 +759,156 @@ async fn network_addressing_can_be_updated_and_apps_get_caddy_routes() {
         !snippet.exists(),
         "removing the app must remove its Caddy site"
     );
+}
+
+#[tokio::test]
+async fn voice_assistant_name_is_configurable_and_wake_word_activates_the_kiosk() {
+    let app = TestApp::spawn().await;
+    let session = app.setup_admin("admin", PASSWORD).await;
+
+    // Defaults: always-on wake word enabled, customizable name.
+    let config = app
+        .admin(
+            Method::GET,
+            "/api/v1/voice/config",
+            None,
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(config.status, StatusCode::OK, "{}", config.text);
+    assert_eq!(config.body["config"]["assistant_name"], "Aura");
+    assert_eq!(config.body["config"]["wake_word_enabled"], true);
+    assert_eq!(config.body["config"]["activation_mode"], "both");
+
+    // Customize the name.
+    let updated = app
+        .admin(
+            Method::PUT,
+            "/api/v1/voice/config",
+            Some(json!({
+                "assistant_name": "Jarvis",
+                "wake_word_enabled": true,
+                "activation_mode": "both",
+                "sensitivity": 0.7,
+                "listening_window_secs": 10,
+                "language": "en"
+            })),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(updated.status, StatusCode::OK, "{}", updated.text);
+    assert_eq!(updated.body["config"]["assistant_name"], "Jarvis");
+
+    // The kiosk mirrors the configured name.
+    let kiosk_state = app
+        .kiosk(
+            Method::GET,
+            "/api/v1/kiosk/state",
+            None,
+            Some(&app.state.kiosk_token()),
+        )
+        .await;
+    assert_eq!(kiosk_state.status, StatusCode::OK);
+    assert_eq!(kiosk_state.body["assistant_name"], "Jarvis");
+    assert_eq!(kiosk_state.body["voice"]["wake_word_enabled"], true);
+
+    // A local transcript calling the name activates the listening window.
+    let wake = app
+        .kiosk(
+            Method::POST,
+            "/api/v1/kiosk/wake",
+            Some(json!({"transcript": "oye Jarvis enciende la luz", "confidence": 0.92})),
+            Some(&app.state.kiosk_token()),
+        )
+        .await;
+    assert_eq!(wake.status, StatusCode::OK, "{}", wake.text);
+    assert_eq!(wake.body["activated"], true);
+    assert_eq!(wake.body["reason"], "activated");
+    assert_eq!(wake.body["trailing_query"], "enciende la luz");
+
+    // Non-matching speech does not activate.
+    let ignored = app
+        .kiosk(
+            Method::POST,
+            "/api/v1/kiosk/wake",
+            Some(json!({"transcript": "hola, ¿qué tiempo hace?"})),
+            Some(&app.state.kiosk_token()),
+        )
+        .await;
+    assert_eq!(ignored.status, StatusCode::OK);
+    assert_eq!(ignored.body["activated"], false);
+    assert_eq!(ignored.body["reason"], "not_matched");
+
+    // Invalid names are rejected.
+    let invalid = app
+        .admin(
+            Method::PUT,
+            "/api/v1/voice/config",
+            Some(json!({
+                "assistant_name": "x",
+                "wake_word_enabled": true,
+                "activation_mode": "both",
+                "sensitivity": 0.5,
+                "listening_window_secs": 8,
+                "language": "es"
+            })),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(invalid.status, StatusCode::BAD_REQUEST);
+
+    // Wake activations are audited.
+    let audit = app
+        .admin(
+            Method::GET,
+            "/api/v1/audit?limit=50",
+            None,
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert!(audit
+        .body
+        .as_array()
+        .is_some_and(|entries| entries.iter().any(|entry| entry["action"] == "voice.wake")));
+}
+
+#[tokio::test]
+async fn disabled_wake_word_ignores_transcripts() {
+    let app = TestApp::spawn().await;
+    let session = app.setup_admin("admin", PASSWORD).await;
+    let updated = app
+        .admin(
+            Method::PUT,
+            "/api/v1/voice/config",
+            Some(json!({
+                "assistant_name": "Aura",
+                "wake_word_enabled": false,
+                "activation_mode": "push_to_talk",
+                "sensitivity": 0.6,
+                "listening_window_secs": 8,
+                "language": "es"
+            })),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(updated.status, StatusCode::OK);
+
+    let wake = app
+        .kiosk(
+            Method::POST,
+            "/api/v1/kiosk/wake",
+            Some(json!({"transcript": "oye aura"})),
+            Some(&app.state.kiosk_token()),
+        )
+        .await;
+    assert_eq!(wake.status, StatusCode::OK);
+    assert_eq!(wake.body["activated"], false);
+    assert_eq!(wake.body["reason"], "wake_disabled");
 }
 
 #[tokio::test]

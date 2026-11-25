@@ -65,14 +65,58 @@ export interface SessionResponse {
 export type NetworkMode = 'dhcp' | 'static';
 export type NetworkSegment = 'lan' | 'dmz';
 export type DnsEngine = 'adguard_home' | 'technitium';
-export type DnsProvider =
-  | 'cloudflare'
-  | 'cloudflare_malware'
-  | 'cloudflare_family'
-  | 'quad9'
-  | 'controld'
-  | 'custom';
-export type DnsProtocol = 'doh' | 'dot';
+/** Catalog id (validated by the daemon against `hs_core::dns::DNS_PROVIDERS`). */
+export type DnsProvider = string;
+export type DnsProtocol = 'doh' | 'dot' | 'plain';
+
+/** One free-DNS catalog entry returned by `GET /network/dns/providers`. */
+export interface DnsProviderInfo {
+  id: string;
+  label: string;
+  vendor: { id: string; name: string };
+  ipv4: string[];
+  ipv6: string[];
+  doh: string | null;
+  dot: string | null;
+  plain: boolean;
+  requires_config_id: boolean;
+  note: string | null;
+}
+
+export interface VoiceActivationMode {
+  mode: 'wake_word' | 'push_to_talk' | 'both';
+}
+
+export interface VoiceConfig {
+  assistant_name: string;
+  wake_word_enabled: boolean;
+  activation_mode: 'wake_word' | 'push_to_talk' | 'both';
+  sensitivity: number;
+  listening_window_secs: number;
+  language: string;
+}
+
+export interface VoiceStatus {
+  assistant_name: string;
+  wake_word_enabled: boolean;
+  activation_mode: 'wake_word' | 'push_to_talk' | 'both';
+  listening: boolean;
+  last_activation: string | null;
+  activations: number;
+}
+
+export interface VoiceConfigResponse {
+  config: VoiceConfig;
+  status: VoiceStatus;
+}
+
+export interface WakeOutcome {
+  activated: boolean;
+  assistant_name: string;
+  listening: boolean;
+  trailing_query: string | null;
+  reason: string;
+}
 
 export interface StaticIpv4 {
   address: string;
@@ -759,12 +803,20 @@ export interface KioskStateResponse {
   scenes: KioskScene[];
   network: NetworkHealth;
   agent_activity: AgentActivity;
+  assistant_name: string;
+  voice: {
+    wake_word_enabled: boolean;
+    activation_mode: 'wake_word' | 'push_to_talk' | 'both';
+    listening: boolean;
+    listening_window_secs: number;
+  };
 }
 
 export type KioskEvent =
   | { type: 'avatar'; state: AvatarState; profile_id: Uuid | null }
   | { type: 'tracking'; point: TrackingPoint | null }
   | { type: 'profile_activated'; profile: Profile }
+  | { type: 'wake'; assistant_name: string; trailing_query: string | null }
   | { type: 'music'; state: MusicState }
   | { type: 'agent'; activity: AgentActivity }
   | { type: 'network'; status: NetworkHealth }
@@ -802,6 +854,7 @@ export function isKioskEvent(value: unknown): value is KioskEvent {
     'avatar',
     'tracking',
     'profile_activated',
+    'wake',
     'music',
     'agent',
     'network',
