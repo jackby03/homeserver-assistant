@@ -394,10 +394,14 @@ profile-scoped `memory.remember` / `memory.recall` / `memory.forget` tools.
 Memory is stored as one JSON file per profile under `data/memory/` and is only
 exposed to the model through those tools.
 
-Reminders use `timer.create` (label + seconds), `timer.list` and
-`timer.cancel`. Pending timers persist in `data/timers.json`; a daemon-side
+Reminders use `timer.create` (label + relative `seconds`, or absolute local
+`at: "HH:MM"`), `timer.list` and `timer.cancel`. Pending timers persist in `data/timers.json`; a daemon-side
 scheduler fires them through the kiosk as a spoken `Speech` event and a
 notification.
+
+`news.latest` reads the public Google News RSS feed (Spanish/Peru) with no API
+key and returns headline, source, link and publication date. It is the only
+outbound read tool and is only called when the user asks for current events.
 
 Every tool is checked against the profile's `allowed_tools` **before** execution;
 denied tools appear in the trace with `"allowed":false` and are never executed.

@@ -69,6 +69,7 @@ pub(crate) fn fake_ports() -> (ToolPorts, Arc<CallCounts>, Arc<Mutex<Option<Valu
         }),
         memory: Arc::new(FakeMemory::default()),
         timers: Arc::new(crate::ports::EphemeralTimerStore::default()),
+        news: Arc::new(crate::ports::EphemeralNews),
     };
     (ports, counts, webhook_payload)
 }

@@ -238,7 +238,7 @@ mod tests {
         let (ports, _counts, _webhook_payload) = fake_ports();
         let registry = ToolRegistry::builtin(ports);
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 16);
+        assert_eq!(descriptors.len(), 17);
         assert!(registry.get("system.status").is_some());
         assert!(registry.get("music.play").is_some());
         assert!(registry.get("does.not.exist").is_none());

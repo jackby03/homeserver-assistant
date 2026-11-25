@@ -25,6 +25,7 @@ const OWNER_TOOLS: &[&str] = &[
     "timer.create",
     "timer.list",
     "timer.cancel",
+    "news.latest",
 ];
 
 /// Adults may do everything except stop running workloads.
@@ -44,6 +45,7 @@ const ADULT_TOOLS: &[&str] = &[
     "timer.create",
     "timer.list",
     "timer.cancel",
+    "news.latest",
 ];
 
 /// Children get read-only status plus media control.

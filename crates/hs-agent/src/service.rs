@@ -834,6 +834,7 @@ mod tests {
             webhooks: Arc::new(UnusedWebhooks),
             memory: Arc::new(hs_tools::EphemeralMemoryStore::default()),
             timers: Arc::new(hs_tools::EphemeralTimerStore::default()),
+            news: Arc::new(hs_tools::EphemeralNews),
         })
     }
 

@@ -312,6 +312,46 @@ impl TimerControl for EphemeralTimerStore {
     }
 }
 
+/// One current news item.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewsItem {
+    /// Headline.
+    pub title: String,
+    /// Source/publication name.
+    pub source: String,
+    /// Link to the original article.
+    pub link: String,
+    /// Publication date as returned by the feed.
+    pub published_at: String,
+}
+
+/// Read-only current-events search (RSS/news feeds).
+#[async_trait]
+pub trait NewsSearch: Send + Sync {
+    /// Return the latest items, optionally filtered by `query`.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when the feed is unreachable.
+    async fn latest(&self, query: Option<&str>, limit: usize) -> Result<Vec<NewsItem>, String>;
+}
+
+/// Empty news adapter used by tests and ephemeral runs.
+#[derive(Debug, Default)]
+pub struct EphemeralNews;
+
+#[async_trait]
+impl NewsSearch for EphemeralNews {
+    async fn latest(&self, _query: Option<&str>, limit: usize) -> Result<Vec<NewsItem>, String> {
+        Ok((0..limit.min(2))
+            .map(|index| NewsItem {
+                title: format!("Test headline {}", index + 1),
+                source: "Test feed".to_owned(),
+                link: format!("https://example.test/{index}"),
+                published_at: "2026-11-25T10:00:00Z".to_owned(),
+            })
+            .collect())
+    }
+}
 /// Bundle of outbound adapters required to execute tools.
 ///
 /// Cloning is cheap: every field is an `Arc`.
@@ -331,6 +371,8 @@ pub struct ToolPorts {
     pub memory: Arc<dyn MemoryStore>,
     /// Per-profile reminders/timers.
     pub timers: Arc<dyn TimerControl>,
+    /// Read-only current-events feeds.
+    pub news: Arc<dyn NewsSearch>,
 }
 
 impl std::fmt::Debug for ToolPorts {

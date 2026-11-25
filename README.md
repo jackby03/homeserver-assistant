@@ -309,8 +309,8 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | Despliegue de apps con Caddy | ✅ Snippets `apps.d` por app, recarga automática |
 | DNS DoH/DoT, nftables, DMZ, netplan | ✅ Catálogo de 40 variantes, renderizado/golden tests; aplicación real en Linux |
 | Home Assistant + descubrimiento IoT | ✅ Implementado con transportes simulados en tests |
-| Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional |
-| Agente IA, herramientas, workflows, perfiles | ✅ 16 herramientas con permisos por perfil, memoria persistente, timers y trazas |
+| Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional, respuestas sin emojis para TTS |
+| Agente IA, herramientas, workflows, perfiles | ✅ 17 herramientas con permisos por perfil, memoria, timers, noticias RSS y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
 | UI (admin, kiosko, wizard) | ✅ Type-check, 15 tests y build de producción (0,90 MB) |
 | Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; build/prueba real en host Linux |

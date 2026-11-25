@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::{Duration, Local, NaiveTime, TimeZone};
 use hs_core::models::Profile;
 use serde_json::{json, Value};
 
@@ -539,6 +540,56 @@ fn timer_label(map: &serde_json::Map<String, Value>) -> ToolResult<String> {
     Ok(label.to_owned())
 }
 
+fn timer_seconds(map: &serde_json::Map<String, Value>) -> ToolResult<u64> {
+    if let Some(seconds) = map.get("seconds").and_then(Value::as_u64) {
+        if !(10..=86_400).contains(&seconds) {
+            return Err(ToolError::InvalidArguments(
+                "seconds must be between 10 and 86400".to_owned(),
+            ));
+        }
+        return Ok(seconds);
+    }
+    let at = map
+        .get("at")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ToolError::InvalidArguments("missing `seconds` or `at`".to_owned()))?;
+    let now = Local::now();
+    if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(at) {
+        let millis = parsed
+            .with_timezone(&Local)
+            .signed_duration_since(now)
+            .num_milliseconds();
+        if millis <= 0 {
+            return Err(ToolError::InvalidArguments(
+                "`at` must be in the future".to_owned(),
+            ));
+        }
+        return Ok(u64::try_from((millis + 999) / 1_000)
+            .unwrap_or(86_400)
+            .clamp(10, 86_400));
+    }
+    let time = NaiveTime::parse_from_str(at, "%H:%M")
+        .or_else(|_| NaiveTime::parse_from_str(at, "%H:%M:%S"))
+        .map_err(|_| {
+            ToolError::InvalidArguments(
+                "`at` must be HH:MM (24-hour) or an RFC3339 timestamp".to_owned(),
+            )
+        })?;
+    let mut due = now.date_naive().and_time(time);
+    if due <= now.naive_local() {
+        due += Duration::days(1);
+    }
+    let due = Local
+        .from_local_datetime(&due)
+        .single()
+        .ok_or_else(|| ToolError::InvalidArguments("invalid local time".to_owned()))?;
+    let millis = due.signed_duration_since(now).num_milliseconds().max(0);
+    let seconds = u64::try_from((millis + 999) / 1_000).unwrap_or(86_400);
+    Ok(seconds.clamp(10, 86_400))
+}
+
 struct TimerCreate;
 
 #[async_trait]
@@ -548,7 +599,7 @@ impl Tool for TimerCreate {
     }
 
     fn description(&self) -> &'static str {
-        "Create a reminder that the assistant will speak at the due time (for example 'recuérdame sacar la basura en 20 minutos')."
+        "Create a reminder. Pass seconds from now, or at='HH:MM' in the appliance local time shown in the prompt (for example 'recuérdame sacar la basura a las 19:00')."
     }
 
     fn parameters(&self) -> Value {
@@ -561,12 +612,16 @@ impl Tool for TimerCreate {
                 },
                 "seconds": {
                     "type": "integer",
-                    "description": "Delay in seconds from now (10 to 86400).",
+                    "description": "Relative delay in seconds from now (10 to 86400).",
                     "minimum": 10,
                     "maximum": 86400
+                },
+                "at": {
+                    "type": "string",
+                    "description": "Absolute local time as HH:MM (24-hour) or an RFC3339 timestamp. Use the current time from the system prompt."
                 }
             },
-            "required": ["label", "seconds"],
+            "required": ["label"],
             "additionalProperties": false
         })
     }
@@ -585,15 +640,7 @@ impl Tool for TimerCreate {
     ) -> ToolResult<Value> {
         let map = args::object(arguments)?;
         let label = timer_label(&map)?;
-        let seconds = map
-            .get("seconds")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| ToolError::InvalidArguments("missing `seconds`".to_owned()))?;
-        if !(10..=86_400).contains(&seconds) {
-            return Err(ToolError::InvalidArguments(
-                "seconds must be between 10 and 86400".to_owned(),
-            ));
-        }
+        let seconds = timer_seconds(&map)?;
         let entry = ports
             .timers
             .create(&profile.id.to_string(), &label, seconds)
@@ -693,6 +740,63 @@ impl Tool for TimerCancel {
     }
 }
 
+struct NewsLatest;
+
+#[async_trait]
+impl Tool for NewsLatest {
+    fn name(&self) -> &'static str {
+        "news.latest"
+    }
+
+    fn description(&self) -> &'static str {
+        "Read current headlines from a Spanish-language news feed, optionally filtered by topic. Always cite the source and date; never invent news."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional topic, person, place or keyword."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of headlines (1-8).",
+                    "minimum": 1,
+                    "maximum": 8
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, ports: &ToolPorts, arguments: Value) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let query = args::optional_value(&map, "query").and_then(|value| match value {
+            Value::String(value) => {
+                let trimmed = value.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_owned())
+            }
+            _ => None,
+        });
+        let limit = map
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|value| usize::try_from(value).unwrap_or(5))
+            .unwrap_or(5)
+            .clamp(1, 8);
+        let items = ports
+            .news
+            .latest(query.as_deref(), limit)
+            .await
+            .map_err(ToolError::Upstream)?;
+        let count = items.len();
+        Ok(json!({ "items": items, "count": count }))
+    }
+}
+
 /// Instantiate every built-in tool.
 pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
     vec![
@@ -712,6 +816,7 @@ pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(TimerCreate),
         Arc::new(TimerList),
         Arc::new(TimerCancel),
+        Arc::new(NewsLatest),
     ]
 }
 
@@ -744,6 +849,7 @@ mod tests {
             "timer.create".to_owned(),
             "timer.list".to_owned(),
             "timer.cancel".to_owned(),
+            "news.latest".to_owned(),
         ]
     }
 
@@ -751,7 +857,7 @@ mod tests {
     async fn every_builtin_tool_has_a_schema() {
         let (registry, _counts) = registry();
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 16);
+        assert_eq!(descriptors.len(), 17);
         let names: Vec<String> = descriptors.iter().map(|tool| tool.name.clone()).collect();
         let mut expected = all_tools();
         expected.sort();
@@ -790,6 +896,24 @@ mod tests {
             .await
             .expect("recall");
         assert_eq!(empty.output["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn news_tool_returns_feed_items() {
+        let (registry, _counts) = registry();
+        let profile = profile_with_tools(&["news.latest"]);
+        let result = registry
+            .invoke(
+                &profile,
+                "news.latest",
+                json!({"query": "Perú", "limit": 2}),
+            )
+            .await
+            .expect("news");
+        assert_eq!(result.output["count"], 2);
+        assert!(result.output["items"][0]["link"]
+            .as_str()
+            .is_some_and(|link| link.starts_with("https://")));
     }
 
     #[tokio::test]
