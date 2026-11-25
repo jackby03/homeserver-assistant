@@ -856,7 +856,11 @@ def main() -> int:
         if window is None:
             silent_windows += 1
             if silent_windows == 1 or silent_windows % 6 == 0:
-                print("[wakeword] waiting for speech...")
+                print(
+                    "[wakeword] waiting for speech... (silence detected; if this "
+                    "persists, power-cycle the G435 headset: it may be off, "
+                    "asleep, hardware-muted or out of battery)"
+                )
             if args.once:
                 print("[wakeword] silence; no wake word detected")
                 return 0
@@ -1000,6 +1004,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
