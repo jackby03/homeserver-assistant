@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  detectKioskWake,
   kioskApi,
   synthesizeKioskSpeech,
   transcribeKioskAudio,
@@ -535,7 +536,6 @@ export function KioskPage(): React.JSX.Element {
   };
 
   const closeTalk = (): void => {
-    stopContinuous();
     setTalkOpen(false);
     setListening(false);
     setAvatarState('idle');
@@ -613,19 +613,15 @@ export function KioskPage(): React.JSX.Element {
   const continuousLoop = async (stream: MediaStream): Promise<void> => {
     while (continuousRef.current) {
       try {
-        const clip = await recordClip(stream, 2_500);
+        const clip = await recordClip(stream, 2_000);
         if (!continuousRef.current) return;
-        const transcript = await transcribeKioskAudio(clip);
-        if (transcript.trim() === '') continue;
-        const outcome = await kioskApi.wake(transcript);
+        if (!(await detectKioskWake(clip))) continue;
+        const outcome = await kioskApi.wake('hola aura');
         if (!outcome.activated) continue;
         setAssistantName(outcome.assistant_name);
         setAvatarState('listening');
-        let query = (outcome.trailing_query ?? '').trim();
-        if (query === '') {
-          const requestClip = await recordClip(stream, 6_000);
-          query = (await transcribeKioskAudio(requestClip)).trim();
-        }
+        const requestClip = await recordClip(stream, 6_000);
+        const query = (await transcribeKioskAudio(requestClip)).trim();
         if (query !== '') await sendQuery(query);
       } catch {
         await new Promise((resolve) => window.setTimeout(resolve, 1_000));
@@ -656,6 +652,23 @@ export function KioskPage(): React.JSX.Element {
     setContinuous(true);
     void continuousLoop(stream);
   };
+
+  const autoStarted = useRef(false);
+
+  useEffect(() => {
+    if (autoStarted.current) return;
+    if (micState !== 'granted') return;
+    if (continuousRef.current) return;
+    if (
+      typeof navigator === 'undefined' ||
+      navigator.mediaDevices?.getUserMedia === undefined ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      return;
+    }
+    autoStarted.current = true;
+    void toggleContinuous();
+  }, [micState, toggleContinuous]);
 
   const toggleRecording = async (): Promise<void> => {
     if (recording) {
