@@ -40,7 +40,6 @@ import type {
 } from '@/api/types';
 import { ReconnectingSocket } from '@/api/ws';
 import type { SocketStatus } from '@/api/ws';
-import { AvatarFigure } from '@/components/Avatar';
 import { BoopAvatar } from '@/components/BoopAvatar';
 import { Spinner } from '@/components/Spinner';
 import { StatusPill } from '@/components/StatusPill';
@@ -131,7 +130,7 @@ export function KioskPage(): React.JSX.Element {
     network: initial?.network ?? EMPTY_NETWORK,
     agentActivity: initial?.agent_activity ?? 'idle',
   });
-  const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Aurora');
+  const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Bober');
   const [avatarState, setAvatarState] = useState<AvatarState>('idle');
   const [tracking, setTracking] = useState<TrackingPoint | null>(null);
   const [wsStatus, setWsStatus] = useState<SocketStatus>(isDemo ? 'open' : 'connecting');
@@ -953,7 +952,6 @@ export function KioskPage(): React.JSX.Element {
               state={avatarState}
               size={avatarSize}
               tracking={tracking}
-              className="transition-transform duration-500 group-hover:scale-[1.01]"
             />
           </button>
           <div className="text-center">
@@ -1173,7 +1171,7 @@ export function KioskPage(): React.JSX.Element {
             aria-label={t('kiosk.profiles.switch')}
           >
             {profile !== null ? (
-              <AvatarFigure avatar={profile.avatar} state="idle" size={34} decorative />
+              <BoopAvatar avatar={profile.avatar} state="idle" size={34} decorative />
             ) : (
               <span className="grid h-8 w-8 place-items-center rounded-full border border-white/10 text-ink-500">
                 <Mic size={14} />
@@ -1248,7 +1246,7 @@ export function KioskPage(): React.JSX.Element {
                           : 'border-white/[0.07] bg-white/[0.02] hover:border-white/[0.16]',
                       )}
                     >
-                      <AvatarFigure avatar={item.avatar} state="idle" size={56} decorative />
+                      <BoopAvatar avatar={item.avatar} state="idle" size={56} decorative />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[14px] font-medium text-ink-50">{item.name}</span>
                         <span className="block text-[11px] text-ink-500">
@@ -1498,6 +1496,7 @@ function activityToAvatar(activity: AgentActivity): AvatarState {
       return 'idle';
   }
 }
+
 
 
 

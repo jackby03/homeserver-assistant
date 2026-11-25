@@ -54,7 +54,7 @@ Voice. It runs as four local loopback services:
 |---|---|---|
 | Wake word (Alkove, Spanish) | 10400 | `wyoming-alkove --uri tcp://127.0.0.1:10400 --lang es --word "hola aura" --any-word --models-dir /var/lib/hs-voice/wyoming/alkove` |
 | Speech-to-text (faster-whisper) | 10300 | `wyoming-faster-whisper --uri tcp://127.0.0.1:10300 --data-dir /var/lib/hs-voice/wyoming/whisper --model base --language es --compute-type int8 --beam-size 1` |
-| Text-to-speech (Piper) | 10200 | `wyoming-piper --uri tcp://127.0.0.1:10200 --data-dir /var/lib/hs-voice/wyoming/piper --voice es_MX-claude-high` |
+| Text-to-speech (Piper) | 10200 | `wyoming-piper --uri tcp://127.0.0.1:10200 --data-dir /var/lib/hs-voice/wyoming/piper --voice es_ES-sharvard-medium` |
 | Kiosk bridge | 5055 | `python3 voice/stt_server.py` |
 
 `voice/stt_server.py` keeps the browser HTTP contract (`/wake`, `/transcribe`,
@@ -161,7 +161,7 @@ The listener does not wait for fixed 2.4 s windows. It streams 100 ms frames
 with a small pre-roll, detects speech onset by RMS and transcribes as soon as the
 user stops talking (0.45 s of trailing silence). The wake phrase uses beam size 1
 while requests keep beam size 3, so the chime typically arrives ~1 s after
-"Aurora" instead of 3-4 s. Tune with `--wake-beam-size`, `--model` and the
+"Bober" instead of 3-4 s. Tune with `--wake-beam-size`, `--model` and the
 device threshold; the log prints both the transcription time and the total flow.
 
 ## Continuous conversation
@@ -243,7 +243,7 @@ python -m venv .demo\voice-venv
   --tts-command "powershell.exe -NoProfile -ExecutionPolicy Bypass -File voice\tts.ps1"
 ```
 
-Say **“Aurora”** followed by the request. The reply is printed and spoken with
+Say **“Bober”** followed by the request. The reply is printed and spoken with
 the local Spanish SAPI voice; no audio or text leaves the machine. The portal's
 voice card shows **“Micrófono local conectado”** while the helper heartbeats (it
 sends one every 15 s and the daemon considers it connected for 45 s).
@@ -293,6 +293,7 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 
 
 

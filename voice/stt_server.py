@@ -81,7 +81,7 @@ PIPER_EXE = Path(
 PIPER_MODEL = Path(
     os.environ.get(
         "HS_PIPER_MODEL",
-        str(ROOT.parent / ".demo" / "piper" / "es_MX-claude-high.onnx"),
+        str(ROOT.parent / ".demo" / "piper" / "es_ES-sharvard-medium.onnx"),
     )
 )
 PIPER_VOICE = None
@@ -477,6 +477,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 

@@ -1,6 +1,5 @@
 import { createElement, useEffect, useRef } from 'react';
 import type { Avatar, AvatarState, TrackingPoint } from '@/api/types';
-import type { CSSProperties } from 'react';
 
 interface BoopFaceElement extends HTMLElement {
   play?: (action: string) => unknown;
@@ -19,6 +18,8 @@ interface BoopAvatarProps {
   tracking?: TrackingPoint | null;
   size?: number;
   className?: string;
+  /** Small decorative previews in lists/headers: no pointer interaction. */
+  decorative?: boolean;
 }
 
 function actionForState(state: AvatarState): string {
@@ -41,30 +42,32 @@ function actionForState(state: AvatarState): string {
  *
  * BoopFace renders the face as SVG and exposes an imperative API. The kiosk
  * maps its own avatar states to BoopFace actions so listening, thinking and
- * speaking are visibly different; the voice kit methods are used when present.
+ * speaking are visibly different; the voice kit methods use the real lifecycle.
+ *
+ * `size` is passed only as the component attribute (not as a CSS width/height
+ * pair) to avoid a ResizeObserver feedback loop that made the face flicker.
  */
 export function BoopAvatar({
   avatar,
   state,
   size = 260,
   className,
+  decorative = false,
 }: BoopAvatarProps): React.JSX.Element {
   const ref = useRef<BoopFaceElement | null>(null);
   const ready = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    let timer = 0;
     const apply = (): void => {
-      if (cancelled || ref.current === null) return;
       const face = ref.current;
-      const stop = (): void => {
-        try {
-          face.stopWaiting?.();
-        } catch {
-          /* not supported */
-        }
-      };
-      stop();
+      if (cancelled || face === null) return;
+      try {
+        face.stopWaiting?.();
+      } catch {
+        /* BoopFace API is best effort */
+      }
       try {
         if (state === 'listening' && face.startListening !== undefined) {
           void face.startListening();
@@ -84,48 +87,42 @@ export function BoopAvatar({
         }
         void face.play?.(actionForState(state));
       } catch {
-        /* BoopFace API is best effort; never break the kiosk */
+        /* never break the kiosk if the avatar API changes */
       }
     };
 
-    if (ready.current) {
-      apply();
-      return () => {
-        cancelled = true;
-      };
-    }
-    void import('@/vendor/boopface/boopface-lite.js')
-      .then(() => {
-        ready.current = true;
-        if (!cancelled) apply();
-      })
-      .catch(() => undefined);
+    timer = window.setTimeout(() => {
+      if (ready.current) {
+        apply();
+        return;
+      }
+      void import('@/vendor/boopface/boopface-lite.js')
+        .then(() => {
+          ready.current = true;
+          if (!cancelled) apply();
+        })
+        .catch(() => undefined);
+    }, 40);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [state]);
 
   useEffect(() => {
     if (ref.current === null) return;
-    ref.current.setPointerFollow?.(state === 'tracking');
-  }, [state]);
+    ref.current.setPointerFollow?.(!decorative && state === 'tracking');
+  }, [decorative, state]);
 
-  const style: CSSProperties = { width: size, height: size };
-  const faceClass = className === undefined ? undefined : className;
-  return createElement(
-    'boop-face',
-    {
-      ref,
-      size,
-      color: avatar.color,
-      'eye-color': avatar.eye_color,
-      'auto-sleep': '0',
-      motion: 'auto',
-      class: faceClass,
-      style,
-      'aria-label': 'Aurora',
-    },
-    null,
-  );
+  return createElement('boop-face', {
+    ref,
+    size: Math.min(Math.max(32, Math.round(size)), 380),
+    color: avatar.color,
+    'eye-color': avatar.eye_color,
+    'auto-sleep': '0',
+    'pointer-follow': decorative ? 'false' : 'true',
+    motion: decorative ? 'reduce' : 'auto',
+    class: className,
+    ...(decorative ? { 'aria-hidden': 'true' } : { 'aria-label': 'Bober' }),
+  });
 }
-

@@ -642,6 +642,7 @@ const es = {
   'prof.avatar.shape': 'Forma',
   'prof.avatar.color': 'Color',
   'prof.avatar.eyeColor': 'Color de ojos',
+  'prof.avatar.boopHint': 'Avatar BoopFace: usa los colores del perfil; las expresiones se animan solas.',
   'prof.avatar.tilt': 'Inclinación de ojos',
   'prof.avatar.preview': 'Vista previa',
   'prof.avatar.state': 'Estado de prueba',
@@ -1555,6 +1556,7 @@ const en: Dictionary = {
   'prof.avatar.shape': 'Shape',
   'prof.avatar.color': 'Color',
   'prof.avatar.eyeColor': 'Eye color',
+  'prof.avatar.boopHint': 'BoopFace avatar: profile colours are used and expressions animate automatically.',
   'prof.avatar.tilt': 'Eye tilt',
   'prof.avatar.preview': 'Preview',
   'prof.avatar.state': 'Preview state',
@@ -1858,5 +1860,6 @@ export function interpolate(template: string, vars?: Record<string, string | num
   const withDouble = replace(template, /\{\{(\w+)\}\}/g);
   return replace(withDouble, /\{(\w+)\}/g);
 }
+
 
 
