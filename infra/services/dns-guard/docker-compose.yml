@@ -1,0 +1,65 @@
+# AdGuard Home - DNS filtering (reference compose deployment)
+# =============================================================================
+# The appliance runs this app as an Incus container managed by hs-daemon.
+# This compose file is the standalone/reference deployment with the same
+# images, ports and volumes (see ../README.md).
+#
+# Start:   docker compose up -d
+# Logs:    docker compose logs -f
+# Update:  bump the pinned tag deliberately, then `docker compose pull && up -d`
+# =============================================================================
+name: hs-dns-guard
+
+services:
+  adguardhome:
+    # Pin the release tag: DNS is critical, an unattended major bump can break
+    # filtering. `v0.107.52` is the version the templates were written against.
+    image: adguard/adguardhome:v0.107.52
+    container_name: hs-dns-guard
+    restart: unless-stopped
+
+    # Host networking: DNS must answer on the LAN interface on port 53 and
+    # preserve client source addresses so per-client filtering and statistics
+    # work. A bridge with `ports: 53:53/udp` would make every client look like
+    # the Docker gateway.
+    network_mode: host
+
+    # Port 53 inside the container is bound by the image's entrypoint.
+    # No `ports:` mapping is needed (and is ignored) with host networking.
+
+    volumes:
+      # The daemon renders conf/AdGuardHome.yaml from SystemConfig.network.dns
+      # on the appliance. On a standalone host, edit it by hand.
+      - ./conf:/opt/adguardhome/conf
+      - ./work:/opt/adguardhome/work
+
+    environment:
+      TZ: ${TZ:-UTC}
+
+    security_opt:
+      - no-new-privileges:true
+
+    # DNS is a hot path; bound the logs so a filtered/blocked client cannot
+    # fill the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      # AdGuard answers DNS on 53; `nslookup` is not in the image, so probe the
+      # loopback web UI instead (loopback is always served).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Alternative without host networking (loses client IPs; only for labs):
+  #   adguardhome:
+  #     network_mode: bridge
+  #     ports:
+  #       - "53:53/tcp"
+  #       - "53:53/udp"
+  #       - "127.0.0.1:3000:3000/tcp"   # web UI loopback only

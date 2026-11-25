@@ -1,0 +1,24 @@
+[package]
+name = "hs-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Core domain types, configuration schema, encrypted storage and shared events"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+redb.workspace = true
+chacha20poly1305.workspace = true
+rand.workspace = true
+base64.workspace = true
+zeroize.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

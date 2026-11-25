@@ -1,0 +1,110 @@
+# =============================================================================
+# HomeServer Assistant OS - Caddy reverse proxy (internal TLS)
+# =============================================================================
+# Installed as /etc/caddy/Caddyfile.
+#
+# Role in the appliance (the intended architecture):
+#
+#   browser ──https://<hostname>.local:8443──► Caddy (TLS termination, local CA)
+#                                                   │
+#                                                   └─► 127.0.0.1:8080  hs-daemon
+#                                                          (plain HTTP, loopback)
+#
+#   kiosk Chromium ──http://127.0.0.1:3000──► hs-daemon kiosk API (loopback only,
+#                                             never proxied by Caddy)
+#
+# Design rules:
+#   * The daemon API listens on loopback only; Caddy is the single TLS entry
+#     point for the LAN and for tunnels.
+#   * Certificates are issued by Caddy's local CA (`tls internal`). There is no
+#     ACME account and no public certificate: the appliance must work without
+#     internet access. `caddy trust` (hs-firstboot) installs the CA root into
+#     the appliance trust store; other devices import it once.
+#   * Ports 80/443 are NOT used. The admin portal and app vhosts share 8443, so
+#     a home router port-forward cannot accidentally expose the portal.
+#   * Kiosk port 3000 is deliberately absent from this file.
+# =============================================================================
+
+{
+	# No admin API: snippets are rendered under /etc/caddy/apps.d and applied by
+	# `systemctl reload caddy` (atomic, no HTTP write surface).
+	admin off
+
+	# Nothing listens on port 80; do not redirect from it.
+	auto_https disable_redirects
+
+	# Trust the headers of the loopback proxy only (Caddy here is the edge, so
+	# X-Forwarded-* must not be spoofable from the LAN).
+	servers {
+		trusted_proxies static 127.0.0.1/32 ::1/128
+		protocols h1 h2
+		timeouts {
+			read_body 30s
+			read_header 15s
+			write 0s
+			idle 120s
+		}
+	}
+}
+
+# ---------------------------------------------------------------------------
+# Admin portal
+# ---------------------------------------------------------------------------
+# Hostnames served:
+#   <hostname>.local          mDNS name published by avahi (e.g. homeserver.local)
+#   <hostname>.<base_domain>  configured base domain (default home.local)
+#   localhost                 loopback access from the appliance itself
+#
+# Values come from /etc/homecore/caddy.env (HS_HOSTNAME, HS_BASE_DOMAIN,
+# HS_ADMIN_PORT), written by the installer and kept in sync by the daemon.
+https://{$HS_HOSTNAME:homeserver}.local:{$HS_ADMIN_PORT:8443},
+https://{$HS_HOSTNAME:homeserver}.{$HS_BASE_DOMAIN:home.local}:{$HS_ADMIN_PORT:8443},
+https://localhost:{$HS_ADMIN_PORT:8443} {
+	# Local CA. Every hostname above gets its own internal certificate.
+	tls internal
+
+	encode gzip
+
+	# Caddy liveness probe (used by hs-doctor and the QEMU smoke test).
+	respond /healthz "ok" 200
+
+	# Baseline security headers. HSTS is intentionally short (1 day) and
+	# without includeSubDomains: the appliance uses a private CA, and a long
+	# HSTS policy would make a future CA/trust mistake much harder to recover
+	# from on clients that already visited the portal.
+	header {
+		Strict-Transport-Security "max-age=86400"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), usb=()"
+		# The UI is a same-origin SPA with a WebSocket channel; images may be
+		# data: URLs (avatars) and blobs (snapshots). No inline scripts.
+		Content-Security-Policy "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# API responses must never be cached (auth tokens, camera events, config).
+	@api path /api/*
+	header @api Cache-Control "no-store"
+
+	# The daemon serves plain HTTP on loopback; TLS ends here.
+	# flush_interval -1 keeps SSE/WebSocket streams unbuffered.
+	reverse_proxy 127.0.0.1:8080 {
+		flush_interval -1
+		header_up X-Forwarded-Proto https
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Access log to the journal (structured JSON), useful for the audit trail.
+	log
+}
+
+# ---------------------------------------------------------------------------
+# Daemon-rendered app virtual hosts
+# ---------------------------------------------------------------------------
+# The daemon writes one file per app under /etc/caddy/apps.d/ (for example
+# app-home-assistant.caddy) and reloads Caddy. Files must contain complete site
+# blocks only - no global options and no imports. See README.md for the exact
+# contract and examples.
+import /etc/caddy/apps.d/*.caddy

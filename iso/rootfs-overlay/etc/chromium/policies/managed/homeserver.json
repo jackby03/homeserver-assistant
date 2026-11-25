@@ -1,0 +1,28 @@
+{
+  "//": "HomeServer Assistant kiosk - managed Chromium policy. See docs/DEPLOYMENT.md.",
+  "HomepageLocation": "http://127.0.0.1:3000/kiosk",
+  "HomepageIsNewTabPage": false,
+  "ShowHomeButton": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "PasswordManagerEnabled": false,
+  "AutofillAddressEnabled": false,
+  "AutofillCreditCardEnabled": false,
+  "DefaultGeolocationSetting": 2,
+  "DefaultNotificationsSetting": 2,
+  "MetricsReportingEnabled": false,
+  "SearchSuggestEnabled": false,
+  "TranslateEnabled": false,
+  "PrintingEnabled": false,
+  "DeveloperToolsAvailability": 2,
+  "IncognitoModeAvailability": 1,
+  "AllowDeletingBrowserHistory": false,
+  "BackgroundModeEnabled": false,
+  "HardwareAccelerationModeEnabled": true,
+  "URLBlocklist": [
+    "file://*",
+    "chrome://settings/*",
+    "chrome://flags/*",
+    "chrome://policy/*"
+  ]
+}

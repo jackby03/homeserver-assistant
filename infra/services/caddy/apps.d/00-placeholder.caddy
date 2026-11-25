@@ -1,0 +1,4 @@
+# Placeholder so `import /etc/caddy/apps.d/*.caddy` always matches at least one
+# file. This file is intentionally comment-only (a valid empty Caddyfile
+# fragment) and is NOT daemon-managed: the daemon only creates/removes
+# app-*.caddy files and never touches this one.

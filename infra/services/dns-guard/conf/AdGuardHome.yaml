@@ -1,0 +1,158 @@
+# AdGuard Home - DNS filtering and encrypted upstreams
+# =============================================================================
+# TEMPLATE. On the appliance the daemon (hs-network renderer) renders this file
+# from SystemConfig.network.dns and writes it to the AdGuard Home config volume
+# before (re)starting the container. Committed values are safe defaults only:
+# no users, no password hash, no API tokens.
+#
+# Mapping to hs-core::config:
+#   dns.enabled         -> service deployed at all
+#   dns.engine          -> AdGuardHome (this file) | Technitium (not provided here)
+#   dns.provider        -> `upstream_dns` below (one of the commented variants)
+#   dns.protocol        -> DoH (https:// URL) or DoT (tls:// URL)
+#   dns.custom_upstream -> replaces the upstream list entirely when provider=custom
+#   dns.blocklists      -> `filtering.filters` below
+#   network.dmz.allow_dns -> controls the nftables rule that lets DMZ workloads
+#                            use this resolver (not an AdGuard option)
+#   services.base_domain / device.hostname -> `dns.rewrites` A records
+# =============================================================================
+
+# --- Web UI ------------------------------------------------------------------
+# Loopback only. Operators reach the UI through Caddy (see
+# infra/services/caddy/README.md) or an SSH tunnel; never expose 3000 to the
+# LAN. The daemon's app vhost can proxy it with authentication at the tunnel
+# or Caddy layer.
+http:
+  address: 127.0.0.1:3000
+  session_ttl: 720h
+  doh:
+    enabled: false
+
+# Empty on first boot: the onboarding wizard sets the admin password and
+# AdGuard stores only its bcrypt hash. Never commit a hash here.
+users: []
+auth_attempts: 5
+block_auth_min: 15
+http_proxy: ""
+language: en
+theme: auto
+
+# --- DNS ---------------------------------------------------------------------
+dns:
+  # Listen on all interfaces inside the container so LAN clients can use the
+  # appliance as their resolver (host networking, port 53).
+  bind_hosts:
+    - 0.0.0.0
+  port: 53
+  # Rate limiting protects the resolver against amplification abuse from a
+  # compromised DMZ container.
+  ratelimit: 20
+  ratelimit_subnet_len_ipv4: 24
+  ratelimit_subnet_len_ipv6: 56
+  refuse_any: true
+
+  # Encrypted upstreams. Default rendering for the hs-core default
+  # (DnsProvider::Cloudflare, DnsProtocol::Doh):
+  upstream_dns:
+    - https://dns.cloudflare.com/dns-query
+  # Other supported renders - keep exactly one list active:
+  #   CloudflareMalware + DoH:
+  #     - https://security.cloudflare-dns.com/dns-query
+  #   CloudflareFamily + DoH (blocks malware + adult content):
+  #     - https://family.cloudflare-dns.com/dns-query
+  #   Quad9 + DoH:
+  #     - https://dns.quad9.net/dns-query
+  #   Quad9 + DoT:
+  #     - tls://dns.quad9.net
+  #   ControlD + DoH:
+  #     - https://freedns.controld.com/p0
+  #   Custom + DoH/DoT: dns.custom_upstream from SystemConfig.
+
+  # Plain DNS bootstrap only: needed to resolve the DoH/DoT hostnames
+  # themselves. It is not used for user queries.
+  bootstrap_dns:
+    - 1.1.1.1
+    - 9.9.9.9
+  fallback_dns: []
+  upstream_mode: load_balance
+  fastest_timeout: 1s
+  upstream_timeout: 10s
+  enable_dnssec: true
+
+  # Cache: small on purpose (appliance RAM is shared with Incus workloads).
+  cache_size: 4194304
+  cache_ttl_min: 0
+  cache_ttl_max: 0
+  cache_optimistic: false
+
+  # Local names. The daemon appends one rewrite per app + the appliance:
+  #   <hostname>.<base_domain>   -> appliance LAN address
+  #   <app>.<base_domain>        -> appliance LAN address (Caddy routes by Host)
+  # Example placeholder - do NOT hard-code a site address:
+  rewrites:
+    - domain: homeserver.home.local
+      answer: 192.0.2.10
+  # Replace 192.0.2.10 with the appliance's LAN address (RFC 5737 test range on
+  # purpose: it makes a non-rendered file obvious during review).
+
+  # Never forward reverse lookups for private ranges upstream (privacy).
+  use_private_ptr_resolvers: true
+  local_ptr_upstreams: []
+  private_networks: []
+  handle_ddr: true
+
+# --- Filtering ---------------------------------------------------------------
+filtering:
+  enabled: true
+  interval: 24
+  filters:
+    - enabled: true
+      url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt
+      name: AdGuard DNS filter
+      id: 1
+    - enabled: true
+      url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt
+      name: AdAway Default Blocklist
+      id: 2
+  whitelist_filters: []
+  # Operator allow rules survive daemon re-rendering only if the daemon merges
+  # them; by contract the daemon owns this file, so put persistent overrides in
+  # SystemConfig (dns.blocklists) or the app settings, not here.
+  user_rules: []
+
+# --- DHCP --------------------------------------------------------------------
+# The home router keeps the DHCP role. The appliance only serves DNS.
+dhcp:
+  enabled: false
+  interface_name: ""
+  local_domain_name: lan
+  dhcpv4:
+    gateway_ip: ""
+    subnet_mask: ""
+    range_start: ""
+    range_end: ""
+    lease_duration: 86400
+    icmp_timeout_msec: 1000
+    options: []
+  dhcpv6:
+    range_start: ""
+    lease_duration: 86400
+    ra_slaac_only: false
+    ra_allow_slaac: false
+
+# --- TLS ---------------------------------------------------------------------
+# The admin UI is loopback-only behind Caddy, so AdGuard does not terminate
+# TLS itself.
+tls:
+  enabled: false
+  server_name: ""
+  force_https: false
+  port_https: 0
+  port_dns_over_tls: 0
+  port_dns_over_quic: 0
+  certificate_chain: ""
+  private_key: ""
+
+# Schema version of this template. AdGuard migrates older files forward on
+# start; check `AdGuardHome --version` when bumping the image.
+schema_version: 28

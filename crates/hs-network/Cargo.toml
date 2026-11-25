@@ -1,0 +1,24 @@
+[package]
+name = "hs-network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "DNS (DoH/DoT) profiles, nftables firewall, DMZ isolation and netplan rendering"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+ipnet.workspace = true
+regex.workspace = true
+get_if_addrs.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

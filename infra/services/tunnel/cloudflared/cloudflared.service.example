@@ -1,0 +1,49 @@
+# =============================================================================
+# cloudflared systemd unit (EXAMPLE)
+# =============================================================================
+# Install as /etc/systemd/system/cloudflared.service, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now cloudflared
+#
+# Do NOT run `cloudflared service install` when using this unit: that command
+# writes its own unit file and the two would race for the same config.
+#
+# The unit runs as root because the tunnel may need to read root-only
+# credentials under /etc/cloudflared. For a least-privilege setup, chown the
+# credentials to a dedicated `cloudflared` user and switch User=/Group= below.
+# =============================================================================
+[Unit]
+Description=Cloudflare Tunnel (HomeServer Assistant outbound publishing)
+Documentation=file:/opt/homeserver-assistant/docs/DEPLOYMENT.md
+After=network-online.target caddy.service
+Wants=network-online.target caddy.service
+# Never start the tunnel if the local origin is not ready: a dead origin would
+# return 502 to the public hostname.
+Requires=caddy.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+# `--no-autoupdate` keeps the binary under package management; update it with
+# apt/cloudflared repo instead of self-updating during a tunnel outage.
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+Restart=on-failure
+RestartSec=5
+# Hardening: the binary only needs its config, network and DNS.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/cloudflared
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

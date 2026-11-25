@@ -1,0 +1,80 @@
+# =============================================================================
+# HomeServer Assistant OS - reference netplan for the LAN/DMZ bridges
+# =============================================================================
+# REFERENCE TEMPLATE, not installed by the ISO. The authoritative renderer is
+# `hs_network::netplan` (crates/hs-network/src/netplan.rs), which the daemon
+# applies to:
+#
+#   /etc/netplan/90-homeserver.yaml
+#
+# This file documents the bridge model the renderer is expected to produce and
+# is used by docs/DEPLOYMENT.md for the topology diagram. Keep the interface
+# names in sync with hs-core::config:
+#   network.interface  = eth0      physical uplink
+#   network.lan_bridge = br-lan    trusted LAN bridge
+#   network.dmz.bridge = br-dmz    isolated DMZ bridge
+#
+# Rules encoded here:
+#   1. eth0 is only a bridge member - it must NOT also carry the LAN address
+#      (two owners of the same address breaks ARP and DHCP).
+#   2. br-lan holds the appliance LAN address, via DHCP or static, and is the
+#      interface the admin portal is reachable from.
+#   3. br-dmz holds 10.20.30.1/24 and deliberately has NO default route.
+#      DMZ internet egress is masqueraded by nftables
+#      (table ip homeserver_nat, infra/firewall/nftables.conf).
+# =============================================================================
+network:
+  version: 2
+  renderer: networkd
+
+  ethernets:
+    eth0:
+      dhcp4: false
+      dhcp6: false
+      # No addresses here on purpose: eth0 is enslaved to br-lan below.
+      # Docker/Incus present eth0 as the physical uplink for masquerading.
+
+  bridges:
+    # --- Trusted LAN -------------------------------------------------------
+    br-lan:
+      interfaces: [eth0]
+      dhcp4: true
+      # Static addressing alternative (set by the wizard when
+      # SystemConfig.network.mode = static):
+      # dhcp4: false
+      # addresses: [192.168.1.10/24]
+      # routes:
+      #   - to: default
+      #     via: 192.168.1.1
+      # The appliance advertises its local filtering resolver to LAN clients;
+      # the daemon keeps this in sync with network.dns.enabled.
+      nameservers:
+        addresses: [127.0.0.1]
+        search: [home.local]
+      parameters:
+        stp: false
+        forward-delay: 0
+        # Keep the bridge MAC stable across reinstalls if a router reserves a
+        # DHCP lease for the appliance:
+        # macaddress: "aa:bb:cc:dd:ee:ff"
+
+    # --- Isolated DMZ ------------------------------------------------------
+    br-dmz:
+      interfaces: []
+      dhcp4: false
+      dhcp6: false
+      addresses: [10.20.30.1/24]
+      # INTENTIONALLY no default route / gateway: DMZ traffic is routed and
+      # masqueraded by nftables out of eth0, and can never be routed back into
+      # br-lan (forward policy drop + explicit DMZ -> LAN drop).
+      parameters:
+        stp: false
+        forward-delay: 0
+
+# -----------------------------------------------------------------------------
+# Scaling note
+# -----------------------------------------------------------------------------
+# A single YAML file is enough for the appliance. If a second uplink or a VLAN
+# is added, use /etc/netplan/90-homeserver.yaml as the only file that defines
+# br-lan/br-dmz and leave the distro's 50-cloud-init.yaml renderer to the
+# physical ports - two files must never define the same bridge.

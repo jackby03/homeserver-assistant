@@ -1,0 +1,23 @@
+[Unit]
+Description=HomeServer Assistant first-boot provisioning
+Documentation=file:/opt/homeserver-assistant/docs/DEPLOYMENT.md
+# Idempotent and self-marking: after a successful run this unit does nothing,
+# so it stays enabled for repair runs.
+ConditionPathExists=!/var/lib/homecore/.firstboot-done
+After=network-online.target incus.service caddy.service systemd-sysusers.service systemd-tmpfiles-setup.service local-fs.target
+Wants=network-online.target caddy.service incus.service
+# Provision before the daemon and the kiosk start so the wizard URL and the
+# local CA trust are ready when the UI first opens.
+Before=hs-daemon.service hs-kiosk.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hs-firstboot.sh
+RemainAfterExit=yes
+# First boot may include image pulls; 5 minutes is generous but bounded.
+TimeoutStartSec=300
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

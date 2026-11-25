@@ -1,0 +1,184 @@
+# =============================================================================
+# HomeServer Assistant OS - Incus preseed (baseline)
+# =============================================================================
+# Apply with:
+#
+#   sudo incus admin init --preseed < infra/incus-preseed.yaml
+#
+# (The ISO first-boot script runs this automatically once Incus is up.)
+#
+# A preseed is applied once; editing this file later has no effect. Re-apply it
+# only on a fresh host. Later changes are made by the hs-daemon (`hs-network`)
+# and `incus ...` commands.
+#
+# Naming contract (must stay in sync with hs-core::config, hs-network::netplan
+# and hs-network::firewall):
+#   * LAN bridge   br-lan   SystemConfig.network.lan_bridge  (trusted)
+#   * DMZ bridge   br-dmz   SystemConfig.network.dmz.bridge  (isolated)
+#   * physical uplink    eth0   SystemConfig.network.interface (WAN)
+#   * project      homeserver
+#   * storage      local (zfs preferred, dir fallback)
+#
+# Bridge ownership (important):
+#   The host bridges br-lan and br-dmz are owned by netplan, which hs-network
+#   renders to /etc/netplan/90-homeserver.yaml:
+#     - br-lan: bridge with eth0 as its only member, holding the appliance LAN
+#       address (DHCP or static). eth0 must NOT also have an address.
+#     - br-dmz: bridge with 10.20.30.1/24 and NO default route.
+#   Incus instances therefore attach to the *existing* bridges through the
+#   profiles below (`nictype: bridged`, `parent: br-lan|br-dmz`). Do not create
+#   Incus-managed networks with the same names: that would give the bridges two
+#   managers and fight netplan. The equivalent Incus-managed-network form is
+#   kept as a comment at the bottom for standalone (non-netplan) hosts.
+#
+# DMZ threat model (AGENTS.md section 3.6):
+#   DMZ workloads are untrusted. They may reach the internet (updates, outbound
+#   tunnel clients) through a masqueraded uplink, but never the LAN, the admin
+#   portal (8443) or any host service other than the DNS/NTP allow list. The
+#   matching firewall rules live in infra/firewall/nftables.conf.
+# =============================================================================
+
+# Top-level Incus configuration. Intentionally empty: the daemon runs as root
+# and talks to the local unix socket only. Do NOT set core.https_address: the
+# remote API is not required by the appliance and would widen the attack
+# surface. (Images come from the default `images:` remote, configured by Incus
+# itself - no preseed entry is required.)
+config: {}
+
+# -----------------------------------------------------------------------------
+# Storage
+# -----------------------------------------------------------------------------
+# `zfs` is strongly preferred: cheap snapshots for app rollback, quota support
+# and copy-on-write clones. The pool below is loop-file backed ("size"), which
+# works on any disk and is safe to apply unattended. For a dedicated data disk
+# replace `size` with:
+#
+#   source: /dev/disk/by-id/<DISK-ID>      # whole disk, will be destroyed
+#
+# and optionally set `zfs.pool_name` / `zfs.mountpoint`. Pick the stable name
+# from `ls -l /dev/disk/by-id/`; never use /dev/sdX.
+storage_pools:
+  - name: local
+    description: "Workload storage for HomeServer Assistant apps"
+    driver: zfs
+    config:
+      size: 30GiB
+      # zfs.pool_name: homeserver-local
+  # Fallback for hosts without ZFS (kernel module unavailable):
+  # comment out the `zfs` pool above and uncomment this one. `dir` has no
+  # snapshots, so app rollback relies on the appliance backup job instead.
+  # - name: local
+  #   description: "Workload storage (dir fallback, no snapshots)"
+  #   driver: dir
+  #   config: {}
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+# Empty on purpose - see "Bridge ownership" above. Keeping this list empty is
+# what makes netplan the single owner of br-lan/br-dmz. The standalone form is
+# documented at the end of the file.
+networks: []
+
+# -----------------------------------------------------------------------------
+# Profiles
+# -----------------------------------------------------------------------------
+# Profiles stay in the `default` project and are shared with the `homeserver`
+# project through features.profiles=false (see projects below): the preseed
+# format has no project field for profiles.
+profiles:
+  # Base profile: every instance gets a root disk on the `local` pool.
+  - name: default
+    description: "Base profile: root disk only, no network"
+    config: {}
+    devices:
+      root:
+        type: disk
+        path: /
+        pool: local
+
+  # LAN-facing workloads (Home Assistant, Music Assistant, ...).
+  # Attaches to the netplan-owned br-lan bridge; the instance is a first-class
+  # LAN citizen (router DHCP, mDNS/SSDP discovery work).
+  - name: lan
+    description: "Workload on the trusted LAN bridge (br-lan)"
+    config: {}
+    devices:
+      eth0:
+        type: nic
+        nictype: bridged
+        parent: br-lan
+        security.mac_filtering: "true"
+
+  # DMZ workloads (untrusted / public-facing apps).
+  # Attaches to the netplan-owned br-dmz bridge.
+  - name: dmz
+    description: "Workload on the isolated DMZ bridge (br-dmz)"
+    config:
+      # DMZ workloads are untrusted: no nesting, no privileged containers and a
+      # bounded footprint so a compromised app cannot starve the host.
+      security.nesting: "false"
+      security.privileged: "false"
+      limits.cpu: "2"
+      limits.memory: 2GiB
+      boot.autostart: "true"
+      boot.autostart.priority: "10"
+    devices:
+      eth0:
+        type: nic
+        nictype: bridged
+        parent: br-dmz
+        # Anti-spoofing: the bridge drops frames whose L2/L3 source does not
+        # match the instance's address. Together with the nftables DMZ rules
+        # this prevents a compromised container from impersonating the LAN.
+        security.mac_filtering: "true"
+        security.ipv4_filtering: "true"
+        security.port_isolation: "true"
+
+# -----------------------------------------------------------------------------
+# Projects
+# -----------------------------------------------------------------------------
+# All workloads live in a dedicated project so instances, images and volumes
+# are namespaced away from the appliance's own state. features.profiles=false
+# and features.networks=false share the baseline profiles/networks instead of
+# duplicating them.
+projects:
+  - name: homeserver
+    description: "HomeServer Assistant workloads"
+    config:
+      features.images: "true"
+      features.networks: "false"
+      features.profiles: "false"
+      features.storage.volumes: "true"
+      restricted: "false"
+
+# -----------------------------------------------------------------------------
+# APPENDIX - standalone Incus-managed bridges (no netplan)
+# -----------------------------------------------------------------------------
+# Only for hosts that deliberately let Incus own the bridges (e.g. a lab VM
+# without the appliance netplan). Remove the netplan br-dmz/br-lan stanzas
+# first, replace `networks: []` above with the block below, and attach the
+# profiles with `network: br-dmz` / `network: br-lan` instead of `parent:`.
+#
+# networks:
+#   - name: br-lan
+#     description: "LAN bridge (Incus-managed variant)"
+#     type: bridge
+#     config:
+#       ipv4.address: none          # the home router serves DHCP
+#       ipv4.nat: "false"           # bridged to the LAN, not NATed
+#       ipv6.address: none
+#       dns.mode: none
+#       bridge.external_interfaces: eth0
+#   - name: br-dmz
+#     description: "Isolated DMZ bridge (Incus-managed variant)"
+#     type: bridge
+#     config:
+#       ipv4.address: 10.20.30.1/24
+#       ipv4.nat: "false"           # egress is masqueraded by nftables instead
+#       ipv4.dhcp: "true"
+#       ipv4.dhcp.ranges: 10.20.30.100-10.20.30.200
+#       ipv6.address: none
+#       ipv6.nat: "false"
+#       dns.mode: none
+#       dns.zone.recursion: "false"

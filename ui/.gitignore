@@ -1,0 +1,19 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+coverage
+.vite
+
+# Local tooling caches used when installing behind a file sandbox.
+.tools
+.pnpm-store
+.pnpm-cache
+.pnpm-state
+.pnpm-local
+.pnpm-profile
+.npm-cache
+install.log

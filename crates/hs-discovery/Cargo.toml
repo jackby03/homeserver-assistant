@@ -1,0 +1,23 @@
+[package]
+name = "hs-discovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local IoT discovery: mDNS, SSDP/UPnP and ARP with vendor lookup"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+mdns-sd.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+get_if_addrs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

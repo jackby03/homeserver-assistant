@@ -1,0 +1,48 @@
+[Unit]
+Description=HomeServer Assistant privileged daemon
+Documentation=file:/opt/homeserver-assistant/docs/DEPLOYMENT.md
+# The daemon needs the appliance network and Incus. Incus is Wants= instead of
+# Requires= so that the API still comes up (and the wizard can report the
+# problem) when Incus failed to start.
+Wants=network-online.target incus.service
+After=network-online.target incus.service systemd-tmpfiles-setup.service
+
+[Service]
+Type=simple
+# Root is required for Incus, nftables and sysfs access. See README.md for the
+# hardening caveats (Incus socket / namespace attach).
+User=root
+Group=root
+WorkingDirectory=/var/lib/homecore
+EnvironmentFile=-/etc/homecore/env
+ExecStart=/usr/local/bin/hs-daemon serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+
+# --- Hardening ---------------------------------------------------------------
+# Writable paths are the explicit allow list; everything else on the system is
+# read-only or inaccessible. Keep this list in sync with README.md.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/homecore /var/lib/incus /run/homecore /etc/caddy/apps.d /etc/nftables.d /etc/netplan /etc/systemd/logind.conf.d
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+# Deliberately NOT set: PrivateDevices= (Incus may need device nodes for
+# instance attach), RestrictNamespaces= and PrivateNetwork= (container
+# networking), ProtectProc=hidepid (metrics read /proc). Do not add them
+# without testing on the target kernel, see README.md.
+
+[Install]
+WantedBy=multi-user.target

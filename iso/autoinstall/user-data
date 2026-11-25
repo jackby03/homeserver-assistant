@@ -1,0 +1,171 @@
+#cloud-config
+# =============================================================================
+# HomeServer Assistant OS - Ubuntu 24.04 LTS Server autoinstall
+# =============================================================================
+# This file is delivered to the installer as a NoCloud seed:
+#
+#   ISO layout (built by iso/build-iso.sh):
+#     /nocloud/user-data   <- this file
+#     /nocloud/meta-data
+#     /hs/repo/            <- repository staging (infra/, scripts/, iso/)
+#     /hs/bin/             <- optional prebuilt hs-daemon + hs-vision
+#
+#   Patched kernel command line (per boot entry):
+#     autoinstall "ds=nocloud;s=/cdrom/nocloud/"
+#   (The quotes matter: GRUB would otherwise treat the semicolon as the end of
+#   the statement.)
+#
+# The install is fully unattended: no interactive sections, no SSH server
+# installed, no cloud-init datasource on the installed system.
+#
+# BEFORE SHIPPING AN APPLIANCE: change the console password hash below.
+#   openssl passwd -6            # prompts for the password
+# =============================================================================
+autoinstall:
+  version: 1
+
+  # --- Locale / time ---------------------------------------------------------
+  # Keep the OS in UTC; the appliance stores per-user/app timezones itself
+  # (SystemConfig.device.timezone defaults to UTC, UI defaults to es/en).
+  locale: en_US.UTF-8
+  timezone: UTC
+  keyboard:
+    layout: us
+    # variant: intl
+
+  # --- Identity --------------------------------------------------------------
+  # The `homeserver` account is the local console/administrator account. It is
+  # NOT the portal account (the wizard creates appliance users with Argon2id),
+  # and it is not used by any daemon service.
+  identity:
+    hostname: homeserver
+    username: homeserver
+    realname: HomeServer Assistant
+    # Password hash for the local console user. THIS IS THE WELL-KNOWN EXAMPLE
+    # HASH FOR THE PASSWORD "ubuntu" - replace it before building a real image:
+    #   openssl passwd -6 'a strong password'
+    password: "__CONSOLE_PASSWORD_HASH__"
+
+  # --- SSH -------------------------------------------------------------------
+  # Disabled by default: the appliance is administered through the portal and
+  # the local console. Enable only if you understand the exposure, and always
+  # with key-only authentication:
+  ssh:
+    install-server: false
+    # allow-pw: false
+    # authorized-keys:
+    #   - ssh-ed25519 AAAA... you@laptop
+
+  # --- Network ---------------------------------------------------------------
+  # Omitted on purpose: the installer uses DHCP on every interface, which is
+  # what the wizard expects for the first boot. Static addressing is configured
+  # afterwards through the portal (SystemConfig.network.static_ipv4) so the
+  # daemon can render the matching netplan.
+  #
+  # network:
+  #   version: 2
+  #   ethernets:
+  #     eth0:
+  #       dhcp4: true
+
+  # --- Storage ---------------------------------------------------------------
+  # Single-disk, single ext4 root partition (Ubuntu server default layout).
+  # The appliance keeps all state under /var/lib/homecore so a reinstall never
+  # needs LVM snapshots; Incus app snapshots provide rollback for workloads.
+  storage:
+    layout:
+      name: direct
+      # match:
+      #   size: largest          # pin the target disk on multi-disk hardware
+    # Alternative: btrfs (snapshots for /var/lib/incus, see docs/ISO.md):
+    # layout:
+    #   name: btrfs
+    #
+    # A 4 GiB swap FILE is created in late-commands: curtin's storage model has
+    # no swap-file type. Do not add a swap partition - the appliance's disk
+    # layout is fixed and resize-friendly.
+
+  # --- Packages --------------------------------------------------------------
+  # Runtime only: no compilers, no Docker. The Rust binaries are injected by
+  # the ISO build (`--binaries`) or installed later from a signed release.
+  packages:
+    # Container runtime + storage backend.
+    - incus
+    - zfsutils-linux          # zfs storage pool; dir fallback is documented
+    # Firewall.
+    - nftables
+    # TLS reverse proxy (Ubuntu universe; see docs/ISO.md if version is too old).
+    - caddy
+    # Audio stack for native Music Assistant + kiosk audio (PipeWire session).
+    - pipewire
+    - pipewire-pulse
+    - wireplumber
+    # Wall kiosk: cage (Wayland kiosk compositor) + Chromium.
+    - cage
+    - chromium-browser        # Ubuntu 24.04: transitional package -> snap
+    - snapd                   # required by the chromium snap
+    - fonts-dejavu-core       # UI font for the kiosk
+    # Discovery: avahi publishes <hostname>.local; libnss-mdns resolves it on
+    # the host itself so Caddy/curl can use the same name as browsers.
+    - avahi-daemon
+    - avahi-utils
+    - libnss-mdns
+    # Remote access + tooling.
+    - wireguard-tools
+    - jq
+    - curl
+    - ca-certificates
+    - rsync
+    # Power/hardware diagnostics for hs-doctor.
+    - lm-sensors
+    - usbutils
+
+  # --- Installer behaviour ---------------------------------------------------
+  # Do not refresh the installer from the network: reproducibility and offline
+  # installs matter more than late installer fixes.
+  refresh-installer:
+    update: false
+  # Only security updates at install time (the appliance updates on its own
+  # schedule through the portal).
+  updates: security
+
+  # --- Post-install hooks ----------------------------------------------------
+  late-commands:
+    # 1) Static provisioning: copy the rootfs overlay, systemd units, firewall,
+    #    Caddy config and helper scripts into /target, then enable the units.
+    #    Runs OUTSIDE the target chroot (so it can use `systemctl --root=`) and
+    #    writes only below /target. Idempotent, all messages in English.
+    - bash /cdrom/hs/repo/scripts/install.sh --target /target --source /cdrom/hs/repo --binaries /cdrom/hs/bin
+
+    # 2) Swap file (see storage comment above).
+    - >-
+      curtin in-target --target=/target -- bash -c
+      'set -euo pipefail;
+      if [ ! -e /swapfile ]; then
+      fallocate -l 4G /swapfile;
+      chmod 600 /swapfile;
+      mkswap /swapfile >/dev/null;
+      echo "/swapfile none swap sw 0 0" >> /etc/fstab;
+      fi'
+
+    # 3) Kernel parameters for a wall panel: never blank the console (the kiosk
+    #    owns tty1 and cage does not implement DPMS), quiet boot.
+    - >-
+      curtin in-target --target=/target -- bash -c
+      'set -euo pipefail;
+      if grep -q "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub; then
+      sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"quiet consoleblank=0\"/" /etc/default/grub;
+      else
+      printf "%s\n" "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet consoleblank=0\"" >> /etc/default/grub;
+      fi;
+      update-grub'
+
+    # 4) Marker consumed by iso/test-vm.sh and by hs-firstboot logs. Written to
+    #    the serial console; harmless on hardware without ttyS0.
+    - bash -c 'printf "\nHomeServer Assistant install complete\n" > /dev/ttyS0 2>/dev/null || true'
+
+    # 5) Leave the target in the state the first-boot unit expects and reboot.
+    - curtin in-target --target=/target -- bash -c 'set -euo pipefail; install -d -m0700 /var/lib/homecore; systemctl --root=/ enable hs-firstboot.service'
+
+  # Reboot into the installed system; remove the installation media.
+  shutdown: reboot

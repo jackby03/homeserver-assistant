@@ -1,0 +1,70 @@
+# Music Assistant (reference compose deployment)
+# =============================================================================
+# The appliance runs Music Assistant as an Incus container managed by hs-daemon
+# and uses it to drive the home stereo (see ../README.md).
+# This compose file is the standalone/reference deployment.
+#
+# Start:   docker compose up -d
+# Logs:    docker compose logs -f music-assistant
+# =============================================================================
+name: hs-music-assistant
+
+services:
+  music-assistant:
+    # `stable` follows upstream; pin a dated tag for reproducible deployments.
+    image: ghcr.io/music-assistant/server:stable
+    container_name: hs-music-assistant
+    restart: unless-stopped
+
+    # Host networking keeps player discovery (mDNS/AirPlay/Snapcast/slimproto)
+    # and the web UI on port 8095 working.
+    network_mode: host
+
+    volumes:
+      - ./data:/data
+
+    environment:
+      TZ: ${TZ:-UTC}
+      # Music Assistant writes its library/database under /data.
+      # Optional log level: LOG_LEVEL=info
+
+    security_opt:
+      - no-new-privileges:true
+
+    # ---------------------------------------------------------------------
+    # AUDIO LIMITATION - read this before enabling a local player.
+    # ---------------------------------------------------------------------
+    # A container has no access to the host PipeWire/PulseAudio session:
+    # /run/user/<uid>/pipewire-0 is not mounted and the host socket is owned
+    # by the appliance user, not the container. Music Assistant's local audio
+    # player/provider therefore cannot play out of the appliance's speakers
+    # from inside a container.
+    #
+    # Options, best first:
+    #   1. Use network players (AirPlay/Chromecast/Snapcast/HA media_player)
+    #      driven by Music Assistant - no host audio access needed.
+    #   2. Install Music Assistant natively on the appliance host so it can use
+    #      PipeWire directly (recommended for a wired USB DAC):
+    #        pipx install music-assistant
+    #        systemctl --user enable --now music-assistant   # user session
+    #      or run it as a dedicated system user with
+    #      XDG_RUNTIME_DIR=/run/user/<uid> and the wireplumber session.
+    #   3. Bind-mount the host audio socket into the container (fragile: the
+    #      container UID must match the host user and PipeWire must be running
+    #      in the container's network/cgroup namespace):
+    #        - /run/user/1000/pipewire-0:/tmp/pipewire-0
+    #        - /run/user/1000/pulse:/tmp/pulse
+    #      and set PULSE_SERVER=unix:/tmp/pulse/native. Not supported by the
+    #      appliance: document it as a lab experiment only.
+    #
+    # On the appliance the native-audio path is documented in
+    # docs/DEPLOYMENT.md ("Audio output"); the daemon selects the PipeWire sink
+    # through hs-system (wpctl) when audio.sink_id is configured.
+    # ---------------------------------------------------------------------
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8095/ || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

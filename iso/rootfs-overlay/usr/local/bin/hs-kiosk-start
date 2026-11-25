@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# =============================================================================
+# HomeServer Assistant OS - kiosk launcher
+# =============================================================================
+# Executed by hs-kiosk.service on /dev/tty1:
+#
+#   logind session (PAMName=login)
+#     -> cage (Wayland kiosk compositor, DRM/KMS)
+#        -> chromium --kiosk http://127.0.0.1:3000/kiosk
+#
+# XDG_RUNTIME_DIR is exported here from the *actual* kiosk UID so the unit does
+# not have to hard-code /run/user/1000. The script waits for the daemon's kiosk
+# endpoint (plain HTTP on loopback, never proxied by Caddy) so Chromium does not
+# open on a connection-refused page during a slow boot.
+# =============================================================================
+set -euo pipefail
+
+# Overridable for debugging (`KIOSK_URL=... hs-kiosk-start`).
+# The daemon serves the kiosk UI/API only under /kiosk (never at the root) and
+# sets an HttpOnly `hs_kiosk` cookie when that page is served.
+readonly KIOSK_URL="${KIOSK_URL:-http://127.0.0.1:3000/kiosk}"
+readonly KIOSK_HEALTH_URL="${KIOSK_HEALTH_URL:-$KIOSK_URL}"
+readonly WAIT_SECONDS="${WAIT_SECONDS:-180}"
+readonly CHROMIUM_PROFILE_DIR="${CHROMIUM_PROFILE_DIR:-/var/lib/kiosk/chromium}"
+
+log() {
+    printf '[hs-kiosk] %s\n' "$*" >&2
+}
+
+# --- Runtime directory -------------------------------------------------------
+# logind normally creates /run/user/<uid> when the PAM session opens. Fall back
+# to a private directory under HOME if it did not (e.g. manual execution).
+kiosk_uid="$(id -u)"
+if [[ -d "/run/user/${kiosk_uid}" ]]; then
+    export XDG_RUNTIME_DIR="/run/user/${kiosk_uid}"
+else
+    export XDG_RUNTIME_DIR="${HOME:-/var/lib/kiosk}/.run"
+    install -d -m 0700 "$XDG_RUNTIME_DIR"
+    log "XDG_RUNTIME_DIR missing for uid ${kiosk_uid}; using ${XDG_RUNTIME_DIR}"
+fi
+export HOME="${HOME:-/var/lib/kiosk}"
+export XDG_SESSION_TYPE=wayland
+
+# --- Compositor and browser --------------------------------------------------
+CAGE_BIN="$(command -v cage || true)"
+if [[ -z "$CAGE_BIN" ]]; then
+    log "ERROR: cage is not installed (apt install cage)"
+    exit 1
+fi
+
+CHROMIUM_BIN=""
+for candidate in /usr/bin/chromium /usr/bin/chromium-browser /snap/bin/chromium; do
+    if [[ -x "$candidate" ]]; then
+        CHROMIUM_BIN="$candidate"
+        break
+    fi
+done
+if [[ -z "$CHROMIUM_BIN" ]]; then
+    log "ERROR: Chromium not found (native or snap). See docs/DEPLOYMENT.md."
+    exit 1
+fi
+log "using compositor ${CAGE_BIN} and browser ${CHROMIUM_BIN}"
+
+install -d -m 0700 "$CHROMIUM_PROFILE_DIR"
+
+# --- Wait for the daemon's kiosk endpoint ------------------------------------
+log "waiting for ${KIOSK_HEALTH_URL} (up to ${WAIT_SECONDS}s)"
+deadline=$((SECONDS + WAIT_SECONDS))
+daemon_ready=0
+while ((SECONDS < deadline)); do
+    if curl -fsS -o /dev/null --max-time 2 "$KIOSK_HEALTH_URL"; then
+        daemon_ready=1
+        break
+    fi
+    sleep 2
+done
+if ((daemon_ready == 0)); then
+    # Start anyway: the UI shows a retry page and the kiosk service stays alive
+    # instead of failing in a restart loop while the daemon is being repaired.
+    log "WARNING: kiosk endpoint not reachable yet; starting Chromium anyway"
+else
+    log "kiosk endpoint reachable"
+fi
+
+# --- Launch ------------------------------------------------------------------
+# Notes:
+#   * --ozone-platform=wayland is required: cage is a pure Wayland compositor.
+#   * --user-data-dir keeps local storage (kiosk token/session cookie) across
+#     restarts; the profile is disposable and owned by the kiosk user.
+#   * --app=<url> keeps the window chrome-less; --kiosk additionally disables
+#     window management shortcuts.
+CHROMIUM_FLAGS=(
+    --kiosk
+    --app="$KIOSK_URL"
+    --user-data-dir="$CHROMIUM_PROFILE_DIR"
+    --ozone-platform=wayland
+    --noerrdialogs
+    --disable-infobars
+    --disable-session-crashed-bubble
+    --disable-translate
+    --no-first-run
+    --no-default-browser-check
+    --password-store=basic
+    --touch-events=enabled
+    --disable-features="Translate,MediaRouter"
+)
+
+exec "$CAGE_BIN" -- "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}"
