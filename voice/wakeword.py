@@ -337,15 +337,23 @@ def ask_agent(
     return str(response.get("reply", "")).strip()
 
 
-def beep() -> None:
-    """Short local listening cue played through the default audio output."""
+def listening_chime() -> None:
+    """Soft two-note Siri-like earcon indicating the assistant is listening."""
     try:
-        duration = 0.18
-        frames = int(duration * SAMPLE_RATE)
-        tone = 0.28 * np.sin(
-            2.0 * np.pi * 880.0 * np.arange(frames, dtype=np.float64) / SAMPLE_RATE
-        )
-        sd.play(tone.astype("float32"), SAMPLE_RATE)
+        silence = np.zeros(int(0.03 * SAMPLE_RATE), dtype=np.float64)
+        parts: list[np.ndarray] = []
+        for frequency, duration in ((660.0, 0.10), (988.0, 0.13)):
+            frames = int(duration * SAMPLE_RATE)
+            time_axis = np.arange(frames, dtype=np.float64) / SAMPLE_RATE
+            attack = np.clip(time_axis / 0.012, 0.0, 1.0)
+            release = np.clip((duration - time_axis) / 0.04, 0.0, 1.0)
+            envelope = np.minimum(attack, release)
+            parts.append(
+                0.22 * np.sin(2.0 * np.pi * frequency * time_axis) * envelope
+            )
+            parts.append(silence)
+        audio = np.concatenate(parts[:-1])
+        sd.play(audio.astype("float32"), SAMPLE_RATE)
         sd.wait()
         return
     except Exception as error:
@@ -353,17 +361,10 @@ def beep() -> None:
     try:
         import winsound
 
-        winsound.Beep(880, 180)
+        winsound.Beep(660, 100)
+        winsound.Beep(988, 130)
     except Exception:
         pass
-
-
-def prompt_listening(args: argparse.Namespace) -> None:
-    """Tell the user to speak with the local voice, else a short tone."""
-    text = "Te escucho." if args.language == "es" else "I'm listening."
-    if say(text, args):
-        return
-    beep()
 
 
 def speak(command: str | None, text: str) -> bool:
@@ -590,8 +591,9 @@ def main() -> int:
         if not query:
             # Do not block with a 2 s TTS prompt: start capturing immediately.
             # The user naturally starts talking right after the wake word, so
-            # only a short tone is played before the request recorder opens.
-            beep()
+            # only a short Siri-like chime is played before the request
+            # recorder opens.
+            listening_chime()
             print("[wakeword] listening for the request...")
             try:
                 request_audio = record_until_silence(
@@ -633,7 +635,7 @@ def main() -> int:
         ]
         if not args.no_conversation:
             for _turn in range(args.max_turns):
-                beep()  # subtle cue: the assistant is ready for a follow-up
+                listening_chime()  # Siri-like cue: ready for a follow-up
                 try:
                     follow_audio = record_until_silence(
                         args.follow_up_seconds,
@@ -684,6 +686,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
