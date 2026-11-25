@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   AudioLines,
   CloudOff,
+  CloudSun,
   Home,
   Mic,
   Music2,
@@ -33,6 +34,7 @@ import type {
   KioskEvent,
   KioskScene,
   KioskStateResponse,
+  KioskWeather,
   MusicState,
   NetworkHealth,
   Profile,
@@ -121,6 +123,8 @@ export function KioskPage(): React.JSX.Element {
   const isDemo = params.get('demo') === '1' || import.meta.env.VITE_DEMO === '1';
   const now = useNow(1_000);
   const [avatarSize, setAvatarSize] = useState(avatarSizeForViewport);
+  const [weather, setWeather] = useState<KioskWeather | null>(null);
+  const [automationOpen, setAutomationOpen] = useState(false);
 
   const initial = isDemo ? DEMO_KIOSK_STATE : null;
   const [live, setLive] = useState<LiveState>({
@@ -199,6 +203,31 @@ export function KioskPage(): React.JSX.Element {
   }, []);
 
   /* Clock / viewport / idle ------------------------------------------------- */
+
+  useEffect(() => {
+    if (isDemo) return undefined;
+    let cancelled = false;
+    const load = (): void => {
+      void kioskApi
+        .weather('Lima')
+        .then((snapshot) => {
+          if (!cancelled) setWeather(snapshot);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const timer = window.setInterval(load, 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isDemo]);
+
+  useEffect(() => {
+    if (!automationOpen) return undefined;
+    const timer = window.setTimeout(() => setAutomationOpen(false), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [automationOpen]);
 
   useEffect(() => {
     const onResize = (): void => setAvatarSize(avatarSizeForViewport());
@@ -918,7 +947,7 @@ export function KioskPage(): React.JSX.Element {
       </header>
 
       {/* Main ---------------------------------------------------------------- */}
-      <main className="relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-4 px-6 py-4 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:gap-8">
+      <main className="relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-4 px-6 py-4 sm:px-10 lg:gap-8">
         {/* Avatar */}
         <section className="flex min-h-0 flex-col items-center justify-center gap-5">
           <button
@@ -973,8 +1002,69 @@ export function KioskPage(): React.JSX.Element {
           </div>
         </section>
 
-        {/* Quick tiles */}
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pb-1 lg:max-h-[calc(100dvh-14rem)]">
+        {/* Compact dock: weather + domotics + talk. Details open on demand. */}
+        <div className="fixed right-4 top-24 z-30 flex w-[188px] flex-col gap-2.5 sm:right-6 lg:right-8">
+          <div className="glass rounded-2xl p-3">
+            <div className="flex items-center gap-2 text-ink-400">
+              <CloudSun size={15} className="text-amber-300" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em]">
+                {t('kiosk.weather')} · Lima
+              </span>
+            </div>
+            <p className="mt-1.5 font-display text-[26px] font-medium tabular text-ink-50">
+              {weather === null ? '—°' : `${Math.round(weather.temperature_c)}°`}
+            </p>
+            <p className="text-[10.5px] leading-snug text-ink-400">
+              {weather === null ? t('kiosk.weatherUnavailable') : weather.description}
+            </p>
+            {weather !== null ? (
+              <p className="mt-1 text-[10px] text-ink-500">
+                {t('kiosk.weatherHumidity', { value: Math.round(weather.humidity) })}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAutomationOpen(true)}
+            className="glass flex items-center justify-between gap-2 rounded-2xl px-3.5 py-3 text-left text-[12px] text-ink-200 transition hover:border-mint-400/30 hover:text-mint-100"
+          >
+            <span className="flex items-center gap-2">
+              <Home size={14} className="text-amber-300" />
+              {t('kiosk.automation')}
+            </span>
+            <span className="text-[10px] text-ink-500">
+              {live.scenes.length + (live.music.playing ? 1 : 0)}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={openTalk}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-mint-400/25 bg-mint-400/[0.08] px-3 py-3 text-[12px] font-medium text-mint-100 transition hover:bg-mint-400/[0.13]"
+          >
+            <Mic size={15} />
+            {t('kiosk.talk')}
+          </button>
+        </div>
+
+        {automationOpen ? (
+          <aside className="fixed bottom-4 right-4 top-20 z-40 w-[min(92vw,380px)] overflow-y-auto rounded-[28px] border border-white/10 bg-[#08111d]/95 p-4 shadow-2xl backdrop-blur-xl">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">
+                  {t('kiosk.automation')}
+                </p>
+                <p className="mt-0.5 text-[10.5px] text-ink-500">{t('kiosk.automationHint')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutomationOpen(false)}
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/[0.06] hover:text-ink-100"
+                aria-label={t('kiosk.close')}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-3">
           {/* Music */}
           <section className="glass p-4 sm:p-5">
             <div className="flex items-center justify-between gap-2">
@@ -1100,18 +1190,9 @@ export function KioskPage(): React.JSX.Element {
             </div>
           </section>
 
-          {/* Talk */}
-          <button
-            type="button"
-            onClick={openTalk}
-            className="group flex min-h-[76px] items-center justify-center gap-3 rounded-[22px] border border-mint-400/25 bg-mint-400/[0.07] text-[15px] font-medium text-mint-100 transition hover:border-mint-400/40 hover:bg-mint-400/[0.11] active:scale-[0.995]"
-          >
-            <span className="grid h-11 w-11 place-items-center rounded-full bg-mint-gradient text-[#04121a] shadow-[0_10px_26px_-12px_rgba(110,231,255,0.8)]">
-              <Mic size={20} />
-            </span>
-            {t('kiosk.talk')}
-          </button>
-        </aside>
+            </div>
+          </aside>
+        ) : null}
       </main>
 
       {/* Footer / agent status ----------------------------------------------- */}
