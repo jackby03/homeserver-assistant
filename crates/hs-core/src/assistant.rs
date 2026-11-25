@@ -26,6 +26,13 @@ pub enum LocalIntent {
     Time,
     /// Local date.
     Date,
+    /// Current weather for a city (Lima by default).
+    Weather {
+        /// Normalized city name mentioned by the user, if any.
+        city: Option<String>,
+    },
+    /// "¿cómo estás?", "¿cómo te encuentras?"
+    Wellbeing,
     /// Set the speaker volume to an absolute percentage.
     VolumeSet(u8),
     /// Raise (positive) or lower (negative) the volume by a step.
@@ -64,6 +71,8 @@ impl LocalIntent {
             Self::Farewell => "farewell",
             Self::Time => "time",
             Self::Date => "date",
+            Self::Weather { .. } => "weather",
+            Self::Wellbeing => "wellbeing",
             Self::VolumeSet(_) => "volume_set",
             Self::VolumeStep(_) => "volume_step",
             Self::Mute => "mute",
@@ -180,6 +189,31 @@ fn strip_prefixes<'a>(text: &'a str, prefixes: &[&str]) -> &'a str {
     text.trim()
 }
 
+fn extract_city(text: &str) -> Option<String> {
+    let mut rest: Option<&str> = None;
+    for marker in [" en ", " de ", " para ", " del "] {
+        if let Some(position) = text.rfind(marker) {
+            rest = Some(&text[position + marker.len()..]);
+            break;
+        }
+    }
+    let city = strip_prefixes(rest?.trim(), &["la ciudad de ", "ciudad de ", "la "]);
+    let words: Vec<&str> = city
+        .split_whitespace()
+        .filter(|word| {
+            !matches!(
+                *word,
+                "hoy" | "ahora" | "manana" | "por" | "favor" | "actualmente"
+            )
+        })
+        .collect();
+    if words.is_empty() {
+        None
+    } else {
+        Some(words.join(" "))
+    }
+}
+
 fn extract_target(text: &str) -> Option<String> {
     const PREFIXES: &[&str] = &[
         "enciende ",
@@ -287,6 +321,22 @@ pub fn parse_local_intent(text: &str) -> Option<LocalIntent> {
         return Some(LocalIntent::Date);
     }
 
+    if contains(&text, "clima")
+        || contains(&text, "temperatura")
+        || contains(&text, "grados")
+        || contains(&text, "llover")
+        || contains(&text, "llueve")
+        || contains(&text, "que tiempo")
+        || contains(&text, "como esta el tiempo")
+        || contains(&text, "hace frio")
+        || contains(&text, "hace calor")
+        || contains(&text, "sensacion termica")
+    {
+        return Some(LocalIntent::Weather {
+            city: extract_city(&text),
+        });
+    }
+
     if contains(&text, "silencia")
         || contains(&text, "silencio")
         || text == "mute"
@@ -367,6 +417,14 @@ pub fn parse_local_intent(text: &str) -> Option<LocalIntent> {
         || contains(&text, "tu nombre")
     {
         return Some(LocalIntent::Identity);
+    }
+    if contains(&text, "como estas")
+        || contains(&text, "como te encuentras")
+        || contains(&text, "como andas")
+        || contains(&text, "como te va")
+        || text == "que tal"
+    {
+        return Some(LocalIntent::Wellbeing);
     }
     if contains(&text, "que puedes hacer")
         || contains(&text, "que sabes hacer")
@@ -612,6 +670,20 @@ mod tests {
             parse_local_intent("¿qué puedes hacer?"),
             Some(LocalIntent::Capabilities)
         );
+        assert_eq!(
+            parse_local_intent("¿Qué temperatura hace en Lima?"),
+            Some(LocalIntent::Weather {
+                city: Some("lima".to_owned())
+            })
+        );
+        assert_eq!(
+            parse_local_intent("¿Cómo está el clima?"),
+            Some(LocalIntent::Weather { city: None })
+        );
+        assert_eq!(
+            parse_local_intent("¿Cómo te encuentras?"),
+            Some(LocalIntent::Wellbeing)
+        );
         assert_eq!(parse_local_intent("gracias"), Some(LocalIntent::Thanks));
         assert_eq!(
             parse_local_intent("hasta luego"),
@@ -622,7 +694,6 @@ mod tests {
             Some(LocalIntent::Joke)
         );
         // Complex/general questions must fall through to the LLM.
-        assert!(parse_local_intent("¿qué tiempo hará mañana en Lima?").is_none());
         assert!(parse_local_intent("explícame la teoría de la relatividad").is_none());
     }
 

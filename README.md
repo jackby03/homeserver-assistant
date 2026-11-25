@@ -59,10 +59,16 @@ visión 100 % local.
 - **IA y perfiles**: proveedores OpenAI, Anthropic, DeepSeek, opencode-go y
   endpoints compatibles, claves cifradas, herramientas con permisos por perfil,
   workflows tipo nodo y perfiles familiares con avatar y biometría local.
-- **Voz en el kiosko**: pulsar-y-hablar **y wake word continuo** usando el micrófono de Chrome con STT local loopback (evita la interfaz de audio corrupta de PortAudio/WDM en Windows).\n- **Voz en el kiosko (detalle)**: botón de pulsar-y-hablar que graba con el micrófono de Chrome y transcribe en un servidor STT local loopback (evita la interfaz de audio corrupta de PortAudio/WDM en Windows).\n- **Asistente local-first**: router de comandos en español que resuelve sin IA
-  ni Internet la hora/fecha, volumen, música, luces y escenas de Home Assistant,
-  cálculos, chistes, identidad y ayuda. Solo las preguntas que no cubre pasan al
+- **Voz en el kiosko**: wake word continuo «Hola Aura» con Vosk, STT local
+  (Vosk/faster-whisper), Piper local y micrófono de Chrome; sin depender de la
+  interfaz PortAudio/WDM del host de desarrollo.
+- **Asistente local-first**: router de comandos en español que resuelve sin IA
+  la hora/fecha, el clima actual de Lima u otra ciudad vía Open-Meteo, el
+  bienestar, volumen, música, luces y escenas de Home Assistant, cálculos,
+  chistes, identidad y ayuda. Solo las preguntas que no cubre pasan al
   LLM configurado (con permisos por perfil también para las acciones locales).
+  El clima es la única llamada saliente de este router y solo se hace cuando
+  el usuario pregunta por el tiempo; no se envía audio ni datos personales.
 - **Asistente de voz siempre activo**: se activa llamándolo por su nombre (nombre
   personalizable, por defecto `Aura`), con sensibilidad, ventana de escucha y
   modo nombre/botón configurables; el reconocimiento de voz y las transcripciones
