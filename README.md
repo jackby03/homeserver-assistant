@@ -76,7 +76,7 @@ visión 100 % local.
 
 ### Kiosko de pared (pantalla completa)
 
-- **Avatar SVG animado** con siluetas `circle`, `squircle`, `cloud`, `cone`,
+- **Avatar BoopFace (MIT)**: ojos y expresiones reactivas (escucha, piensa, habla), gestos de cabeza y seguimiento del puntero, con color/ojos por perfil.\n- **Avatar SVG animado** con siluetas `circle`, `squircle`, `cloud`, `cone`,
   `droplet` y dos ojos en cápsula; color, color de ojos e inclinación
   configurables por perfil.
 - **Estados reactivos**: `idle`, `tracking` (los ojos siguen a la persona con
@@ -337,6 +337,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
 
 
 
