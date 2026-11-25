@@ -143,7 +143,7 @@ def sample_level(device: int, seconds: float = 0.5) -> float | None:
 
 
 def choose_input_device() -> tuple[int, float] | None:
-    """Pick the input device with the strongest live signal (levels in dBFS)."""
+    """Pick the input device with the strongest live signal."""
     best: tuple[float, int] | None = None
     for index, device in input_devices():
         level = sample_level(index)
@@ -206,6 +206,17 @@ def record_until_silence(
     return np.concatenate(blocks) if blocks else np.zeros(0, dtype="float32")
 
 
+def normalize_audio(audio: np.ndarray) -> np.ndarray:
+    """Lift quiet microphones to a usable level (max 5x, clipped)."""
+    if audio.size == 0:
+        return audio
+    level = rms(audio)
+    if level <= 0.0:
+        return audio
+    gain = min(0.06 / level, 5.0)
+    return np.clip(audio * gain, -1.0, 1.0)
+
+
 def transcribe(
     model: WhisperModel,
     audio: np.ndarray,
@@ -215,6 +226,7 @@ def transcribe(
 ) -> str:
     """Transcribe a window locally; model/driver failures must not kill the loop."""
     try:
+        audio = normalize_audio(audio)
         segments, _info = model.transcribe(
             audio,
             language=language if language in {"es", "en"} else None,
@@ -326,9 +338,14 @@ def main() -> int:
         choice = choose_input_device()
         if choice is not None:
             device, ambient = choice
-            # Keep a margin over the room noise floor so the helper does not
-            # transcribe every fan/speaker hum as speech.
-            args.threshold = max(args.threshold, ambient * 1.25)
+            # One extra stream open would hang on WDM-KS; reuse the sample that
+            # auto-selection already collected. Cap it so a loud setup moment
+            # cannot make the assistant deaf during normal speech.
+            args.threshold = max(DEFAULT_THRESHOLD, min(ambient * 1.1, 0.009))
+            print(
+                f"[wakeword] ambient={ambient:.6f} "
+                f"threshold={args.threshold:.4f}"
+            )
 
     token = args.token.strip() or read_kiosk_token(args.config)
     assistant_name = args.assistant_name.strip() or fetch_assistant_name(
@@ -458,6 +475,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
 
 
