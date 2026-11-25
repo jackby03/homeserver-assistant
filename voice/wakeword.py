@@ -334,7 +334,15 @@ def transcribe(
 
 
 def play_wav(path: Path) -> bool:
-    """Play a local 16-bit WAV through the default output (headphones)."""
+    """Play a local 16-bit WAV through the Windows default output (headset)."""
+    if os.name == "nt":
+        try:
+            import winsound
+
+            winsound.PlaySound(str(path), winsound.SND_FILENAME)
+            return True
+        except Exception as error:
+            print(f"[wakeword] winsound playback failed: {error}", file=sys.stderr)
     try:
         import wave
 
@@ -432,16 +440,29 @@ def listening_chime() -> None:
             )
             parts.append(silence)
         audio = np.concatenate(parts[:-1])
-        sd.play(audio.astype("float32"), SAMPLE_RATE, device=OUTPUT_DEVICE)
-        sd.wait()
-        return
+        import tempfile
+        import wave
+
+        tmp_root = os.environ.get("HS_TTS_TMP") or tempfile.gettempdir()
+        with tempfile.TemporaryDirectory(
+            prefix="hs-chime-", dir=tmp_root
+        ) as directory:
+            path = Path(directory) / "chime.wav"
+            pcm = (np.clip(audio, -1.0, 1.0) * 32767.0).astype(np.int16)
+            with wave.open(str(path), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(SAMPLE_RATE)
+                handle.writeframes(pcm.tobytes())
+            if play_wav(path):
+                return
     except Exception as error:
         print(f"[wakeword] cue playback failed: {error}", file=sys.stderr)
     try:
         import winsound
 
-        winsound.Beep(660, 100)
-        winsound.Beep(988, 130)
+        winsound.Beep(660, 140)
+        winsound.Beep(988, 180)
     except Exception:
         pass
 
@@ -693,7 +714,7 @@ def main() -> int:
             # only a short Siri-like chime is played before the request
             # recorder opens; the chime runs in a thread so capture starts at
             # once and the beginning of the request is never lost.
-            threading.Thread(target=listening_chime, daemon=True).start()
+            listening_chime()
             print("[wakeword] listening for the request...")
             try:
                 request_audio = record_until_silence(
@@ -735,9 +756,7 @@ def main() -> int:
         ]
         if not args.no_conversation:
             for _turn in range(args.max_turns):
-                threading.Thread(
-                    target=listening_chime, daemon=True
-                ).start()  # cue: ready for a follow-up
+                listening_chime()  # cue: ready for a follow-up
                 try:
                     follow_audio = record_until_silence(
                         args.follow_up_seconds,
@@ -788,6 +807,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
