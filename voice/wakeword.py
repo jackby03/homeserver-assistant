@@ -256,11 +256,12 @@ def speak(command: str | None, text: str) -> None:
         subprocess.run(  # noqa: S603 - operator supplied local command
             command,
             input=text,
+            text=True,
             shell=True,
             check=False,
             timeout=60,
         )
-    except (OSError, subprocess.SubprocessError) as error:
+    except Exception as error:  # TTS must never kill the microphone loop
         print(f"[wakeword] TTS failed: {error}", file=sys.stderr)
 
 
