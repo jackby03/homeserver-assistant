@@ -94,6 +94,19 @@ With `--piper-exe/--piper-model` the helper synthesizes and plays the
 to the optional `--tts-command`, then to a short listening tone, while the kiosk
 can speak replies with the browser's local voices.
 
+Female Spanish voices in Piper: `es_MX-claude-high` (Mexico, female, high
+quality) and `es_ES-mls_9972-low` (Spain, female, low). The tested demo voice is
+`es_MX-claude-high` (`63 MB`, ~2 s synthesis on CPU).
+
+## Continuous conversation
+
+After the first wake word the helper keeps listening for follow-ups without
+requiring the name again. A short tone marks that it is ready; each turn sends
+the previous turns as history so the agent keeps context. It exits the
+conversation after `--follow-up-seconds` (default 7 s) of silence, after
+`--max-turns` (default 8) or when it hears "adiós"/"eso es todo"; use
+`--no-conversation` to go back to one-shot behavior.
+
 On this Windows demo the tested paths are:
 `.demo\voice-venv\Scripts\piper.exe` and
 `.demo\piper\es_ES-sharvard-medium.onnx` (these downloaded artifacts live under
@@ -183,6 +196,7 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 
 
 

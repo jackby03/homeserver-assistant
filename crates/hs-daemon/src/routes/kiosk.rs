@@ -89,6 +89,15 @@ pub struct ListeningBody {
 
 /// Agent query request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentHistoryEntry {
+    /// `user` or `assistant`.
+    pub role: String,
+    /// Previous message text.
+    pub content: String,
+}
+
+/// Conversation history entry accepted from the kiosk/microphone helper.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentQueryBody {
     /// User utterance (already transcribed by the browser).
     pub text: String,
@@ -96,6 +105,10 @@ pub struct AgentQueryBody {
     /// microphone helper sets this to false because it already speaks replies.
     #[serde(default = "default_speak")]
     pub speak: bool,
+    /// Previous turns, oldest first (bounded below). Lets the assistant keep a
+    /// coherent multi-turn conversation without server-side sessions.
+    #[serde(default)]
+    pub history: Vec<AgentHistoryEntry>,
 }
 
 fn default_speak() -> bool {
@@ -392,14 +405,52 @@ async fn agent_query(
     state.kiosk.set_avatar_state(AvatarState::Thinking);
     state.kiosk.set_agent_activity(AgentActivity::Thinking);
 
-    let request = AgentChatRequest {
-        profile_id: profile.id,
-        messages: vec![ChatMessage {
-            role: ChatRole::User,
-            content: text.to_owned(),
+    const MAX_HISTORY_ENTRIES: usize = 24;
+    const MAX_HISTORY_MESSAGE_CHARS: usize = 8_000;
+    const MAX_HISTORY_TOTAL_CHARS: usize = 24_000;
+    if body.history.len() > MAX_HISTORY_ENTRIES {
+        return Err(HttpError::bad_request(
+            "conversation history is too long (max 24 messages)",
+        ));
+    }
+    let mut messages = Vec::with_capacity(body.history.len() + 1);
+    let mut history_chars = 0usize;
+    for entry in &body.history {
+        let role = match entry.role.trim() {
+            "user" => ChatRole::User,
+            "assistant" => ChatRole::Assistant,
+            _ => {
+                return Err(HttpError::bad_request(
+                    "history roles must be `user` or `assistant`",
+                ));
+            }
+        };
+        let content = entry.content.trim();
+        if content.is_empty() {
+            return Err(HttpError::bad_request("history messages must not be empty"));
+        }
+        let chars = content.chars().count();
+        history_chars = history_chars.saturating_add(chars);
+        if chars > MAX_HISTORY_MESSAGE_CHARS || history_chars > MAX_HISTORY_TOTAL_CHARS {
+            return Err(HttpError::bad_request("conversation history is too large"));
+        }
+        messages.push(ChatMessage {
+            role,
+            content: content.to_owned(),
             tool_calls: Vec::new(),
             tool_call_id: None,
-        }],
+        });
+    }
+    messages.push(ChatMessage {
+        role: ChatRole::User,
+        content: text.to_owned(),
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+    });
+
+    let request = AgentChatRequest {
+        profile_id: profile.id,
+        messages,
         use_tools: true,
     };
 

@@ -465,7 +465,19 @@ instances.
 The kiosk receives `{"type":"speech","text":"…"}` for agent replies and renders
 them as ephemeral bubbles in the left chat panel. `POST /kiosk/agent/query`
 accepts an optional `"speak": false` (used by the microphone helper, which speaks
-the reply itself) to avoid duplicate audio.
+the reply itself) to avoid duplicate audio, plus an optional conversation history
+so the agent keeps context across turns:
+
+```json
+{"text":"¿qué estaba planeando?","speak":true,
+ "history":[{"role":"user","content":"planeo un huerto de tomates."},
+            {"role":"assistant","content":"¡Buena idea! ¿maceta o suelo?"}]}
+```
+
+History is bounded to 24 messages / 24k characters; only `user` and `assistant`
+roles are accepted (other roles or oversized histories return `400`). The helper
+sends the last 24 turns automatically and keeps listening for follow-ups without
+repeating the wake word.
 
 ### Voice assistant
 
@@ -534,6 +546,7 @@ Message types: `metrics` (`overview`), `instance` (`name`,`status`),
 | 502 | Upstream failure (LLM, Home Assistant) |
 | 503 | Provider unavailable (Incus, Home Assistant not configured) |
 | 504 | Runtime operation timeout |
+
 
 
 

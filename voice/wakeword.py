@@ -317,6 +317,23 @@ def say(text: str, args: argparse.Namespace) -> bool:
     return speak(args.tts_command, text)
 
 
+def ask_agent(
+    url: str,
+    token: str,
+    text: str,
+    history: list[dict[str, str]],
+    speak_reply: bool,
+) -> str | None:
+    """POST a turn to the local kiosk agent endpoint; None on failure."""
+    payload = {"text": text, "speak": speak_reply, "history": history}
+    try:
+        response = post_json(f"{url}/api/v1/kiosk/agent/query", token, payload)
+    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        print(f"[wakeword] agent query failed: {error}", file=sys.stderr)
+        return None
+    return str(response.get("reply", "")).strip()
+
+
 def beep() -> None:
     """Short local listening cue played through the default audio output."""
     try:
@@ -439,6 +456,23 @@ def main() -> int:
         "--piper-model",
         default="",
         help="Piper .onnx voice model",
+    )
+    parser.add_argument(
+        "--follow-up-seconds",
+        type=float,
+        default=7.0,
+        help="seconds to wait for a follow-up turn without the wake word",
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=8,
+        help="maximum turns in one continuous conversation",
+    )
+    parser.add_argument(
+        "--no-conversation",
+        action="store_true",
+        help="return to the wake word after a single answer",
     )
     args = parser.parse_args()
 
@@ -575,26 +609,73 @@ def main() -> int:
 
         print(f"[wakeword] request: {query}")
         use_local_tts = bool(args.piper_exe and args.piper_model)
-        try:
-            response = post_json(
-                f"{args.url}/api/v1/kiosk/agent/query",
-                token,
-                # With Piper the helper speaks the reply itself; otherwise the
-                # kiosk speaks it with the browser's local voices.
-                {"text": query, "speak": not use_local_tts},
-            )
-        except (urllib.error.URLError, TimeoutError, ValueError) as error:
-            print(f"[wakeword] agent query failed: {error}", file=sys.stderr)
+        reply = ask_agent(args.url, token, query, [], not use_local_tts)
+        if reply is None:
             if args.once:
                 return 1
             continue
-
-        reply = str(response.get("reply", "")).strip()
         print(f"[wakeword] reply: {reply}")
         if use_local_tts:
             say(reply, args)
         if args.once:
             return 0
+
+        # Continuous conversation: after the wake word the user can keep
+        # talking without repeating "Oye Aura". History is sent each turn so
+        # the agent keeps context.
+        conversation: list[dict[str, str]] = [
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": reply},
+        ]
+        if not args.no_conversation:
+            for _turn in range(args.max_turns):
+                beep()  # subtle cue: the assistant is ready for a follow-up
+                try:
+                    follow_audio = record_until_silence(
+                        args.follow_up_seconds,
+                        SILENCE_SECONDS,
+                        args.threshold,
+                        device,
+                    )
+                except Exception as error:
+                    print(
+                        f"[wakeword] follow-up recording failed: {error}",
+                        file=sys.stderr,
+                    )
+                    break
+                follow = transcribe(
+                    model, follow_audio, args.language, beam_size=args.beam_size
+                )
+                if not follow:
+                    print("[wakeword] end of conversation (no follow-up)")
+                    break
+                print(f"[wakeword] follow-up: {follow}")
+                if any(
+                    phrase in follow.lower()
+                    for phrase in ("adiós", "adios", "eso es todo", "hasta luego")
+                ):
+                    say("Hasta luego.", args)
+                    break
+                follow_reply = ask_agent(
+                    args.url,
+                    token,
+                    follow,
+                    conversation[-24:],
+                    not use_local_tts,
+                )
+                if follow_reply is None:
+                    break
+                print(f"[wakeword] reply: {follow_reply}")
+                if use_local_tts:
+                    say(follow_reply, args)
+                conversation.extend(
+                    [
+                        {"role": "user", "content": follow},
+                        {"role": "assistant", "content": follow_reply},
+                    ]
+                )
+                conversation = conversation[-24:]
+        conversation.clear()
 
 
 if __name__ == "__main__":

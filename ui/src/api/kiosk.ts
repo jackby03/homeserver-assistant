@@ -33,6 +33,11 @@ function authHeaders(): Record<string, string> {
 }
 
 /** Kiosk-facing endpoints; all calls carry the kiosk token header. */
+export interface KioskHistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export const kioskApi = {
   state: (): Promise<KioskStateResponse> =>
     http.get<KioskStateResponse>('/kiosk/state', { headers: authHeaders() }),
@@ -43,8 +48,12 @@ export const kioskApi = {
   setListening: (active: boolean): Promise<void> =>
     http.post<void>('/kiosk/listening', { active }, { headers: authHeaders() }),
 
-  query: (text: string): Promise<AgentChatResponse> =>
-    http.post<AgentChatResponse>('/kiosk/agent/query', { text }, { headers: authHeaders() }),
+  query: (text: string, history: KioskHistoryEntry[] = []): Promise<AgentChatResponse> =>
+    http.post<AgentChatResponse>(
+      '/kiosk/agent/query',
+      { text, history },
+      { headers: authHeaders() },
+    ),
 
   musicPlay: (): Promise<MusicState | void> =>
     http.post<MusicState | void>('/kiosk/music/play', undefined, { headers: authHeaders() }),
@@ -62,3 +71,4 @@ export const kioskApi = {
       { headers: authHeaders() },
     ),
 };
+
