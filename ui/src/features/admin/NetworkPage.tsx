@@ -20,7 +20,6 @@ import { networkApi } from '@/api/network';
 import type {
   DmzConfig,
   DnsConfig,
-  DnsProvider,
   DnsTestResponse,
   FirewallStatusResponse,
   NetworkInterface,
@@ -28,43 +27,16 @@ import type {
   StaticIpv4,
 } from '@/api/types';
 import { EmptyState } from '@/components/EmptyState';
+import { DnsProviderPicker } from '@/components/DnsProviderPicker';
 import { Field, Segmented, Toggle } from '@/components/Field';
 import { PageHeader } from '@/components/PageHeader';
 import { Spinner } from '@/components/Spinner';
 import { StatusPill } from '@/components/StatusPill';
 import { errorMessageKey, useI18n } from '@/i18n/I18nProvider';
-import type { DictKey } from '@/i18n/dictionary';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 import { useToast } from '@/state/ToastProvider';
-
-const PROVIDERS: DnsProvider[] = [
-  'cloudflare',
-  'cloudflare_malware',
-  'cloudflare_family',
-  'quad9',
-  'controld',
-  'custom',
-];
-
-const PROVIDER_LABEL_KEYS: Record<DnsProvider, DictKey> = {
-  cloudflare: 'net.provider.cloudflare',
-  cloudflare_malware: 'net.provider.cloudflare_malware',
-  cloudflare_family: 'net.provider.cloudflare_family',
-  quad9: 'net.provider.quad9',
-  controld: 'net.provider.controld',
-  custom: 'net.provider.custom',
-};
-
-const PROVIDER_DESC_KEYS: Record<DnsProvider, DictKey> = {
-  cloudflare: 'net.provider.desc.cloudflare',
-  cloudflare_malware: 'net.provider.desc.cloudflare_malware',
-  cloudflare_family: 'net.provider.desc.cloudflare_family',
-  quad9: 'net.provider.desc.quad9',
-  controld: 'net.provider.desc.controld',
-  custom: 'net.provider.desc.custom',
-};
 
 const DEFAULT_DNS: DnsConfig = {
   enabled: true,
@@ -169,7 +141,8 @@ export function NetworkPage(): React.JSX.Element {
   };
 
   const dnsValidation = useMemo((): string | null => {
-    if (dns.provider === 'custom' && customUpstream.trim() === '') return t('net.dns.customHint');
+    if ((dns.provider === 'custom' || dns.provider === 'nextdns') && customUpstream.trim() === '')
+      return t('net.dns.customHint');
     for (const list of dns.blocklists) {
       if (!/^https?:\/\/\S+$/i.test(list)) return t('net.dns.invalidUrl');
     }
@@ -187,7 +160,10 @@ export function NetworkPage(): React.JSX.Element {
     try {
       await networkApi.updateDns({
         ...dns,
-        custom_upstream: dns.provider === 'custom' ? customUpstream.trim() : null,
+        custom_upstream:
+          dns.provider === 'custom' || dns.provider === 'nextdns'
+            ? customUpstream.trim()
+            : null,
       });
       toast.push({ level: 'success', message: t('net.toast.dnsSaved') });
       setDnsResult(null);
@@ -452,88 +428,36 @@ export function NetworkPage(): React.JSX.Element {
             />
           </Field>
 
-          <div>
-            <p className="field-label">{t('net.dns.provider')}</p>
-            <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-              {PROVIDERS.map((provider) => {
-                const selected = dns.provider === provider;
-                return (
-                  <button
-                    key={provider}
-                    type="button"
-                    onClick={() => setDns((current) => ({ ...current, provider }))}
-                    aria-pressed={selected}
-                    className={cn(
-                      'rounded-2xl border p-3.5 text-left transition duration-150',
-                      selected
-                        ? 'border-mint-400/35 bg-mint-400/[0.06] shadow-glow'
-                        : 'border-white/[0.07] bg-white/[0.02] hover:border-white/[0.15]',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[13px] font-medium text-ink-100">
-                        {t(PROVIDER_LABEL_KEYS[provider])}
-                      </span>
-                      {selected ? <CheckCircle2 size={14} className="text-mint-400" /> : null}
-                    </div>
-                    <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
-                      {t(PROVIDER_DESC_KEYS[provider])}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <DnsProviderPicker
+            provider={dns.provider}
+            protocol={dns.protocol}
+            customUpstream={customUpstream}
+            disabled={!dns.enabled}
+            onProviderChange={(provider) => setDns((current) => ({ ...current, provider }))}
+            onProtocolChange={(protocol) => setDns((current) => ({ ...current, protocol }))}
+            onCustomUpstreamChange={setCustomUpstream}
+          />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t('net.dns.protocol')}>
-              <Segmented
-                value={dns.protocol}
-                onChange={(protocol) => setDns((current) => ({ ...current, protocol }))}
-                options={[
-                  { value: 'doh', label: 'DoH', icon: <Globe2 size={14} /> },
-                  { value: 'dot', label: 'DoT', icon: <ShieldCheck size={14} /> },
-                ]}
-              />
-            </Field>
-            <div className="flex items-end justify-end gap-2">
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => void testDns()}
-                disabled={testingDns}
-              >
-                {testingDns ? <Spinner size={14} /> : <Zap size={14} />}
-                {testingDns ? t('net.dns.testing') : t('net.dns.test')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => void saveDns()}
-                disabled={savingDns}
-              >
-                {savingDns ? <Spinner size={14} className="text-[#04121a]" /> : <ShieldCheck size={14} />}
-                {t('net.saveDns')}
-              </button>
-            </div>
-          </div>
-
-          {dns.provider === 'custom' ? (
-            <Field
-              label={t('net.dns.customUpstream')}
-              htmlFor="dns-custom"
-              hint={t('net.dns.customHint')}
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => void testDns()}
+              disabled={testingDns}
             >
-              <input
-                id="dns-custom"
-                className="input input-mono"
-                value={customUpstream}
-                onChange={(event) => setCustomUpstream(event.target.value)}
-                placeholder={dns.protocol === 'doh' ? 'https://dns.example.com/dns-query' : 'dns.example.com'}
-                spellCheck={false}
-              />
-            </Field>
-          ) : null}
+              {testingDns ? <Spinner size={14} /> : <Zap size={14} />}
+              {testingDns ? t('net.dns.testing') : t('net.dns.test')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => void saveDns()}
+              disabled={savingDns}
+            >
+              {savingDns ? <Spinner size={14} className="text-[#04121a]" /> : <ShieldCheck size={14} />}
+              {t('net.saveDns')}
+            </button>
+          </div>
 
           {dnsResult !== null ? (
             <div

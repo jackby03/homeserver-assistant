@@ -143,6 +143,13 @@ pub enum KioskEvent {
         /// Full profile so the kiosk can render the avatar immediately.
         profile: Profile,
     },
+    /// The household called the assistant by its wake word.
+    Wake {
+        /// Configured assistant name (`Aura`).
+        assistant_name: String,
+        /// Locally transcribed request that followed the name, when present.
+        trailing_query: Option<String>,
+    },
     /// Music state changed.
     Music {
         /// New music state.

@@ -255,14 +255,37 @@ configuration. DNS/DMZ settings are updated by their own endpoints. The change
 is persisted; the daemon applies the rendered netplan/firewall at first boot or
 when the portal asks for it.
 
-`PUT /network/dns` body is `DnsConfig`:
+### DNS provider catalog (`GET /network/dns/providers`)
+
+Returns the complete free-DNS catalog shipped in `hs-core::dns` (40 variants
+across Cloudflare, Google, AdGuard, Quad9, CleanBrowsing, OpenDNS, NextDNS,
+Comodo, Control D — including 13 community blocklists — DNS.WATCH and custom):
+
+```json
+[{"id":"cloudflare","label":"Cloudflare",
+  "vendor":{"id":"cloudflare","name":"Cloudflare"},
+  "ipv4":["1.1.1.1","1.0.0.1"],
+  "ipv6":["2606:4700:4700::1111","2606:4700:4700::1001"],
+  "doh":"https://cloudflare-dns.com/dns-query","dot":"one.one.one.one",
+  "plain":true,"requires_config_id":false,"note":"Rápido y sin filtrado"}, …]
+```
+
+`plain` marks providers that also offer unencrypted DNS; the UI shows a warning
+and the default is always DoH/DoT. `requires_config_id` marks NextDNS: the
+operator supplies its configuration id in `custom_upstream` (used to build
+`https://dns.nextdns.io/<id>` or `<id>.dns.nextdns.io`). The `custom` provider
+requires `custom_upstream` to be a DoH URL or DoT hostname.
+
+### `PUT /network/dns`
+
+Body is `DnsConfig`:
 ```json
 {"enabled":true,"engine":"adguard_home","provider":"quad9","protocol":"dot",
- "custom_upstream":"dns.example.com","blocklists":["https://…"]}
+ "custom_upstream":null,"blocklists":["https://…"]}
 ```
-Providers: `cloudflare`, `cloudflare_malware`, `cloudflare_family`, `quad9`,
-`controld`, `custom`. Protocols: `doh`, `dot`. `custom_upstream` is required for
-`custom` (http(s) URL for DoH, hostname for DoT).
+Providers: any catalog id. Protocols: `doh`, `dot`, `plain` (only when the
+provider supports it; unsupported combinations return `400`). `custom_upstream`
+is required for `custom` and `nextdns`.
 
 `PUT /network/dmz` body is `DmzConfig`
 `{enabled,bridge,subnet,gateway,allow_dns}` with subnet validation and gateway
@@ -400,6 +423,7 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 | POST | `/kiosk/music/volume` | `{volume}` 0–100 (PipeWire) |
 | POST | `/kiosk/scenes/{entity_id}/activate` | HA `scene.turn_on` |
 | POST | `/kiosk/recognize` | `{embedding:[…],threshold?}` → local cosine match + profile activation |
+| POST | `/kiosk/wake` | `{transcript,confidence?}` → local wake-word match (see Voice) |
 | WS | `/kiosk/ws` (alias `/kiosk/events`) | snapshot then `KioskEvent` stream |
 
 `KioskEvent` (tagged by `type`):
@@ -407,6 +431,7 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 {"type":"avatar","state":"tracking","profile_id":"…"}
 {"type":"tracking","point":{"x":0.42,"y":0.55,"confidence":0.87}}
 {"type":"profile_activated","profile":{…}}
+{"type":"wake","assistant_name":"Aura","trailing_query":"enciende la luz"}
 {"type":"music","state":{"playing":true,"track":"…","artist":"…","volume":60,"sink":"…"}}
 {"type":"agent","activity":"thinking"}
 {"type":"network","status":{"online":true,"dns_ok":true,"latency_ms":12}}
@@ -415,6 +440,36 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 `tracking.point` is `null` when nobody is detected. The kiosk only receives
 kiosk-safe operations; it cannot manage users, network, firewall or delete
 instances.
+
+### Voice assistant
+
+| Method | Path | Permission |
+|---|---|---|
+| GET | `/voice/config` | agent.read |
+| GET | `/voice/status` | agent.read |
+| PUT | `/voice/config` | agent.manage |
+
+`GET /voice/config` →
+```json
+{"config":{"assistant_name":"Aura","wake_word_enabled":true,
+           "activation_mode":"both","sensitivity":0.6,
+           "listening_window_secs":8,"language":"es"},
+ "status":{"assistant_name":"Aura","wake_word_enabled":true,
+           "activation_mode":"both","listening":false,
+           "last_activation":null,"activations":0}}
+```
+`PUT /voice/config` validates the name (2–32 letters/digits/spaces/hyphens),
+sensitivity (`0..=1`), window (`3..=60` s) and language (`es`/`en`).
+
+The always-on listener is an optional local helper (`voice/wakeword.py`) that
+runs local STT and posts transcripts to `POST /kiosk/wake`; only transcripts ever
+leave the microphone process. A `200` response:
+```json
+{"activated":true,"assistant_name":"Aura","listening":true,
+ "trailing_query":"enciende la luz","reason":"activated"}
+```
+Non-matching speech returns `activated:false` with `reason` (`not_matched`,
+`wake_disabled`, `push_to_talk_only`, `cooldown`).
 
 ---
 

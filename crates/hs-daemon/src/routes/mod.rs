@@ -14,4 +14,5 @@ pub mod public;
 pub mod setup;
 pub mod system;
 pub mod users;
+pub mod voice;
 pub mod ws;

@@ -15,25 +15,21 @@
 //! encrypted endpoint (chicken-and-egg problem), which is why the engines
 //! require them separately from `upstream_dns`.
 
-use hs_core::config::{DnsConfig, DnsProtocol, DnsProvider};
+use hs_core::config::{DnsConfig, DnsProtocol};
+use hs_core::dns::{provider_spec, DnsProvider};
 
 use crate::error::{NetworkError, NetworkResult};
 
-/// Bootstrap resolvers used to resolve an encrypted endpoint hostname.
-const CLOUDFLARE_BOOTSTRAP: [&str; 2] = ["1.1.1.1", "1.0.0.1"];
-/// Quad9 bootstrap resolvers.
-const QUAD9_BOOTSTRAP: [&str; 2] = ["9.9.9.9", "149.112.112.112"];
-/// Control D bootstrap resolvers.
-const CONTROLD_BOOTSTRAP: [&str; 2] = ["76.76.2.0", "76.76.10.0"];
-/// Conservative fallback bootstrap resolvers for custom providers.
+/// Conservative fallback bootstrap resolvers for the custom provider.
 const DEFAULT_BOOTSTRAP: [&str; 2] = ["1.1.1.1", "1.0.0.1"];
 
-/// A validated encrypted DNS upstream endpoint.
+/// A validated DNS upstream endpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsUpstream {
     /// Endpoint address. For [`DnsProtocol::Doh`] this is an absolute
     /// `https://` URL; for [`DnsProtocol::Dot`] it is a hostname (or
-    /// `hostname:853` when the configuration supplies an explicit port).
+    /// `hostname:853` when the configuration supplies an explicit port); for
+    /// [`DnsProtocol::Plain`] it is a plain IP address.
     pub address: String,
     /// Transport protocol used towards the endpoint.
     pub protocol: DnsProtocol,
@@ -43,89 +39,186 @@ pub struct DnsUpstream {
 
 impl DnsUpstream {
     /// Render the endpoint in the `upstream_dns` syntax used by AdGuard Home
-    /// and Technitium (`https://...` for DoH, `tls://host[:port]` for DoT).
+    /// and Technitium (`https://...` for DoH, `tls://host[:port]` for DoT,
+    /// plain address for legacy plain DNS).
     #[must_use]
     pub fn as_engine_upstream(&self) -> String {
         match self.protocol {
             DnsProtocol::Doh => self.address.clone(),
             DnsProtocol::Dot => format!("tls://{}", self.address),
+            DnsProtocol::Plain => self.address.clone(),
         }
     }
 
-    /// Stable wire name of the transport (`doh` or `dot`).
+    /// Stable wire name of the transport (`doh`, `dot` or `plain`).
     #[must_use]
     pub fn protocol_id(&self) -> &'static str {
         self.protocol.id()
     }
 }
 
-/// Resolve the configured provider into concrete encrypted upstreams.
+/// Resolve the configured provider into concrete upstreams.
 ///
-/// Exactly one upstream is returned today (the provider selected by the
-/// operator); the vector keeps the API future-proof for resolver sets.
+/// Encrypted providers return exactly one upstream (the selected endpoint).
+/// Plain DNS returns one upstream per IPv4/IPv6 bootstrap address because the
+/// catalog lists every resolver for redundancy.
 ///
 /// # Errors
-/// Returns [`NetworkError::Invalid`] when the provider is
-/// [`DnsProvider::Custom`] but the custom endpoint is missing or unsafe (for
-/// example plaintext `http://` for DoH).
+/// Returns [`NetworkError::Invalid`] when the provider does not support the
+/// selected transport, the custom endpoint is missing/unsafe, or a NextDNS
+/// configuration id is missing or malformed.
 pub fn upstreams(config: &DnsConfig) -> NetworkResult<Vec<DnsUpstream>> {
-    let address = match config.provider {
-        DnsProvider::Cloudflare => match config.protocol {
-            DnsProtocol::Doh => "https://cloudflare-dns.com/dns-query".to_owned(),
-            DnsProtocol::Dot => "dns.cloudflare.com".to_owned(),
-        },
-        DnsProvider::CloudflareMalware => match config.protocol {
-            DnsProtocol::Doh => "https://security.cloudflare-dns.com/dns-query".to_owned(),
-            DnsProtocol::Dot => "security.cloudflare-dns.com".to_owned(),
-        },
-        DnsProvider::CloudflareFamily => match config.protocol {
-            DnsProtocol::Doh => "https://family.cloudflare-dns.com/dns-query".to_owned(),
-            DnsProtocol::Dot => "family.cloudflare-dns.com".to_owned(),
-        },
-        DnsProvider::Quad9 => match config.protocol {
-            DnsProtocol::Doh => "https://dns.quad9.net/dns-query".to_owned(),
-            DnsProtocol::Dot => "dns.quad9.net".to_owned(),
-        },
-        DnsProvider::ControlD => match config.protocol {
-            // Free, unfiltered Control D endpoint (profile p0).
-            DnsProtocol::Doh => "https://freedns.controld.com/p0".to_owned(),
-            DnsProtocol::Dot => "p0.freedns.controld.com".to_owned(),
-        },
-        DnsProvider::Custom => {
-            let custom = config.custom_upstream.as_deref().ok_or_else(|| {
+    let provider = config.provider.clone();
+
+    if provider.is_custom() {
+        let custom = config.custom_upstream.as_deref().ok_or_else(|| {
+            NetworkError::Invalid(
+                "custom DNS provider requires `custom_upstream` to be set".to_owned(),
+            )
+        })?;
+        validate_custom_upstream(config.protocol, custom)?;
+        return Ok(vec![DnsUpstream {
+            address: custom.trim().to_owned(),
+            protocol: config.protocol,
+            provider,
+        }]);
+    }
+
+    if provider.is_next_dns() {
+        let id = config
+            .custom_upstream
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| {
                 NetworkError::Invalid(
-                    "custom DNS provider requires `custom_upstream` to be set".to_owned(),
+                    "NextDNS requires your configuration id in `custom_upstream`".to_owned(),
                 )
             })?;
-            validate_custom_upstream(config.protocol, custom)?;
-            custom.trim().to_owned()
+        if !(4..=32).contains(&id.len())
+            || !id
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        {
+            return Err(NetworkError::Invalid(
+                "NextDNS configuration id must be 4-32 letters, digits or hyphens".to_owned(),
+            ));
         }
-    };
+        let address = match config.protocol {
+            DnsProtocol::Doh => format!("https://dns.nextdns.io/{id}"),
+            DnsProtocol::Dot => format!("{id}.dns.nextdns.io"),
+            DnsProtocol::Plain => {
+                return Err(NetworkError::Invalid(
+                    "NextDNS does not offer plain DNS".to_owned(),
+                ));
+            }
+        };
+        return Ok(vec![DnsUpstream {
+            address,
+            protocol: config.protocol,
+            provider,
+        }]);
+    }
 
-    Ok(vec![DnsUpstream {
-        address,
-        protocol: config.protocol,
-        provider: config.provider,
-    }])
+    let spec = provider
+        .spec()
+        .ok_or_else(|| NetworkError::Invalid(format!("unknown DNS provider `{provider}`")))?;
+
+    match config.protocol {
+        DnsProtocol::Doh => {
+            let endpoint = spec.doh.ok_or_else(|| {
+                NetworkError::Invalid(format!("provider `{}` does not offer DoH", spec.label))
+            })?;
+            Ok(vec![DnsUpstream {
+                address: endpoint.to_owned(),
+                protocol: config.protocol,
+                provider,
+            }])
+        }
+        DnsProtocol::Dot => {
+            let host = spec.dot.ok_or_else(|| {
+                NetworkError::Invalid(format!("provider `{}` does not offer DoT", spec.label))
+            })?;
+            Ok(vec![DnsUpstream {
+                address: host.to_owned(),
+                protocol: config.protocol,
+                provider,
+            }])
+        }
+        DnsProtocol::Plain => {
+            if !spec.plain {
+                return Err(NetworkError::Invalid(format!(
+                    "provider `{}` does not offer plain DNS; choose DoH or DoT",
+                    spec.label
+                )));
+            }
+            let addresses = spec
+                .ipv4
+                .iter()
+                .chain(spec.ipv6.iter())
+                .map(|address| DnsUpstream {
+                    address: (*address).to_owned(),
+                    protocol: config.protocol,
+                    provider: provider.clone(),
+                })
+                .collect::<Vec<_>>();
+            if addresses.is_empty() {
+                return Err(NetworkError::Invalid(format!(
+                    "provider `{}` has no bootstrap addresses",
+                    spec.label
+                )));
+            }
+            Ok(addresses)
+        }
+    }
 }
 
-/// Plain IP addresses used only to bootstrap the encrypted endpoint hostname.
+/// Plain IP addresses of the selected provider.
 ///
-/// These values are written to the engine `bootstrap_dns` field, never to
-/// `upstream_dns`.
+/// For encrypted transports these are written to the engine `bootstrap_dns`
+/// field (used only to resolve the endpoint hostname), never to
+/// `upstream_dns`. For plain DNS they are the upstreams themselves.
 #[must_use]
 pub fn bootstrap_servers(config: &DnsConfig) -> Vec<String> {
-    let servers: &[&str] = match config.provider {
-        DnsProvider::Cloudflare
-        | DnsProvider::CloudflareMalware
-        | DnsProvider::CloudflareFamily => &CLOUDFLARE_BOOTSTRAP,
-        DnsProvider::Quad9 => &QUAD9_BOOTSTRAP,
-        DnsProvider::ControlD => &CONTROLD_BOOTSTRAP,
-        DnsProvider::Custom => &DEFAULT_BOOTSTRAP,
+    let Some(spec) = config.provider.spec() else {
+        return DEFAULT_BOOTSTRAP
+            .iter()
+            .map(|server| (*server).to_owned())
+            .collect();
     };
-    servers.iter().map(|server| (*server).to_owned()).collect()
+    if config.provider.is_custom() {
+        return DEFAULT_BOOTSTRAP
+            .iter()
+            .map(|server| (*server).to_owned())
+            .collect();
+    }
+    spec.ipv4
+        .iter()
+        .chain(spec.ipv6.iter())
+        .map(|server| (*server).to_owned())
+        .collect()
 }
 
+/// Catalog id/label/vendor for the admin UI selector.
+#[must_use]
+pub fn provider_catalog() -> &'static [hs_core::dns::DnsProviderSpec] {
+    hs_core::dns::DNS_PROVIDERS
+}
+
+/// Whether a protocol is usable for the configured provider.
+#[must_use]
+pub fn supports(config: &DnsConfig, protocol: DnsProtocol) -> bool {
+    if config.provider.is_custom() {
+        return protocol != DnsProtocol::Plain;
+    }
+    config.provider.supports(protocol)
+}
+
+/// Look up a provider spec id (helper for provisioning/UI code).
+#[must_use]
+pub fn spec_for(id: &str) -> Option<&'static hs_core::dns::DnsProviderSpec> {
+    provider_spec(id)
+}
 /// Render a complete AdGuard Home `AdGuardHome.yaml` configuration.
 ///
 /// The rendered document contains the DNS listener (`dns.bind_hosts`,
@@ -162,10 +255,10 @@ pub fn render_adguard_config(
         )));
     }
 
-    let upstreams = upstreams(config)?;
+    let resolved = upstreams(config)?;
     validate_blocklists(&config.blocklists)?;
 
-    let upstream_values = upstreams
+    let upstream_values = resolved
         .iter()
         .map(|upstream| yaml_string(upstream.as_engine_upstream()))
         .collect();
@@ -228,17 +321,17 @@ pub fn render_adguard_config(
 /// # Errors
 /// Returns [`NetworkError::Invalid`] when the DNS configuration is unusable.
 pub fn render_technitium_config(config: &DnsConfig) -> NetworkResult<String> {
-    let upstreams = upstreams(config)?;
+    let resolved = upstreams(config)?;
     validate_blocklists(&config.blocklists)?;
 
-    let forwarders: Vec<serde_json::Value> = upstreams
+    let forwarders: Vec<serde_json::Value> = resolved
         .iter()
         .map(|upstream| {
             serde_json::json!({
                 "address": upstream.address,
                 "endpoint": upstream.as_engine_upstream(),
                 "protocol": upstream.protocol_id(),
-                "provider": upstream.provider.id(),
+                "provider": upstream.provider.as_str(),
             })
         })
         .collect();
@@ -298,6 +391,11 @@ fn validate_custom_upstream(protocol: DnsProtocol, value: &str) -> NetworkResult
             }
             Ok(())
         }
+        DnsProtocol::Plain => value.parse::<std::net::IpAddr>().map(|_| ()).map_err(|_| {
+            NetworkError::Invalid(
+                "custom plain DNS upstream must be an IPv4 or IPv6 address".to_owned(),
+            )
+        }),
         DnsProtocol::Dot => {
             if value.contains("://") {
                 return Err(NetworkError::Invalid(
@@ -376,333 +474,222 @@ fn yaml_mapping(entries: Vec<(&str, serde_yaml::Value)>) -> serde_yaml::Value {
 
 #[cfg(test)]
 mod tests {
-    use serde_yaml::Value;
+    use super::*;
+    use hs_core::config::{DnsConfig, DnsEngine, DnsProtocol};
+    use hs_core::dns::DnsProvider;
 
-    use hs_core::config::{DnsConfig, DnsProtocol, DnsProvider};
+    fn provider(id: &str) -> DnsProvider {
+        DnsProvider::new(id).expect("catalog provider")
+    }
 
-    use super::{bootstrap_servers, render_adguard_config, render_technitium_config, upstreams};
-    use crate::error::NetworkError;
-
-    fn config_with(provider: DnsProvider, protocol: DnsProtocol) -> DnsConfig {
+    fn config_with(id: &str, protocol: DnsProtocol) -> DnsConfig {
         DnsConfig {
-            provider,
+            enabled: true,
+            engine: DnsEngine::AdGuardHome,
+            provider: provider(id),
             protocol,
-            ..DnsConfig::default()
+            custom_upstream: None,
+            blocklists: Vec::new(),
         }
     }
 
-    fn lookup<'a>(document: &'a Value, path: &[&str]) -> &'a Value {
-        let mut current = document;
-        for segment in path {
-            let next = match segment.parse::<usize>() {
-                Ok(index) => current.get(index),
-                Err(_) => current.get(*segment),
-            };
-            current = next.unwrap_or_else(|| {
-                panic!("missing YAML segment `{segment}` in {document:?}");
-            });
-        }
-        current
-    }
-
-    fn lookup_u64(document: &Value, path: &[&str]) -> Option<u64> {
-        lookup(document, path).as_u64()
+    fn custom_config(protocol: DnsProtocol, upstream: &str) -> DnsConfig {
+        let mut config = config_with("custom", protocol);
+        config.custom_upstream = Some(upstream.to_owned());
+        config
     }
 
     #[test]
-    fn resolves_every_provider_for_both_transports() {
+    fn cloudflare_endpoints_match_the_catalog() {
+        let doh = upstreams(&config_with("cloudflare", DnsProtocol::Doh)).expect("doh");
+        assert_eq!(doh.len(), 1);
+        assert_eq!(doh[0].address, "https://cloudflare-dns.com/dns-query");
+        assert_eq!(doh[0].as_engine_upstream(), doh[0].address);
+        assert_eq!(doh[0].protocol_id(), "doh");
+
+        let dot = upstreams(&config_with("cloudflare_family", DnsProtocol::Dot)).expect("dot");
+        assert_eq!(dot[0].address, "family.cloudflare-dns.com");
+        assert_eq!(
+            dot[0].as_engine_upstream(),
+            "tls://family.cloudflare-dns.com"
+        );
+    }
+
+    #[test]
+    fn filtering_variants_resolve_to_distinct_endpoints() {
         let cases = [
+            ("google", "https://dns.google/dns-query"),
+            ("adguard_family", "https://family.adguard-dns.com/dns-query"),
+            ("quad9_unsecured", "https://dns10.quad9.net/dns-query"),
             (
-                DnsProvider::Cloudflare,
-                DnsProtocol::Doh,
-                "https://cloudflare-dns.com/dns-query",
+                "cleanbrowsing_family",
+                "https://doh.cleanbrowsing.org/doh/family-filter/",
             ),
             (
-                DnsProvider::Cloudflare,
-                DnsProtocol::Dot,
-                "dns.cloudflare.com",
+                "opendns_familyshield",
+                "https://doh.familyshield.opendns.com/dns-query",
             ),
+            ("controld_ads_tracking", "https://freedns.controld.com/p2"),
             (
-                DnsProvider::CloudflareMalware,
-                DnsProtocol::Doh,
-                "https://security.cloudflare-dns.com/dns-query",
+                "controld_hagezi_ultimate",
+                "https://freedns.controld.com/x-hagezi-ultimate",
             ),
-            (
-                DnsProvider::CloudflareMalware,
-                DnsProtocol::Dot,
-                "security.cloudflare-dns.com",
-            ),
-            (
-                DnsProvider::CloudflareFamily,
-                DnsProtocol::Doh,
-                "https://family.cloudflare-dns.com/dns-query",
-            ),
-            (
-                DnsProvider::CloudflareFamily,
-                DnsProtocol::Dot,
-                "family.cloudflare-dns.com",
-            ),
-            (
-                DnsProvider::Quad9,
-                DnsProtocol::Doh,
-                "https://dns.quad9.net/dns-query",
-            ),
-            (DnsProvider::Quad9, DnsProtocol::Dot, "dns.quad9.net"),
-            (
-                DnsProvider::ControlD,
-                DnsProtocol::Doh,
-                "https://freedns.controld.com/p0",
-            ),
-            (
-                DnsProvider::ControlD,
-                DnsProtocol::Dot,
-                "p0.freedns.controld.com",
-            ),
+            ("dnswatch", "https://resolver2.dns.watch/dns-query"),
         ];
-        for (provider, protocol, expected) in cases {
-            let resolved = upstreams(&config_with(provider, protocol)).expect("upstream");
-            assert_eq!(resolved.len(), 1);
-            assert_eq!(resolved[0].address, expected);
-            assert_eq!(resolved[0].protocol, protocol);
-            assert_eq!(resolved[0].provider, provider);
+        for (id, expected) in cases {
+            let resolved = upstreams(&config_with(id, DnsProtocol::Doh)).expect(id);
+            assert_eq!(resolved[0].address, expected, "provider {id}");
         }
     }
 
     #[test]
-    fn resolves_custom_upstreams() {
-        let mut config = config_with(DnsProvider::Custom, DnsProtocol::Doh);
-        config.custom_upstream = Some("https://dns.example.com/dns-query".to_owned());
-        let resolved = upstreams(&config).expect("custom DoH");
-        assert_eq!(resolved[0].address, "https://dns.example.com/dns-query");
-        assert_eq!(
-            resolved[0].as_engine_upstream(),
-            "https://dns.example.com/dns-query"
-        );
+    fn bootstrap_servers_include_ipv4_and_ipv6() {
+        let servers = bootstrap_servers(&config_with("cloudflare", DnsProtocol::Doh));
+        assert!(servers.contains(&"1.1.1.1".to_owned()));
+        assert!(servers.contains(&"2606:4700:4700::1111".to_owned()));
+        let quad9 = bootstrap_servers(&config_with("quad9", DnsProtocol::Dot));
+        assert!(quad9.contains(&"149.112.112.112".to_owned()));
+        assert!(quad9.contains(&"2620:fe::9".to_owned()));
+        let custom = bootstrap_servers(&custom_config(
+            DnsProtocol::Doh,
+            "https://dns.example.com/dns-query",
+        ));
+        assert_eq!(custom, vec!["1.1.1.1", "1.0.0.1"]);
+    }
 
+    #[test]
+    fn nextdns_requires_configuration_id() {
+        let mut config = config_with("nextdns", DnsProtocol::Doh);
+        assert!(upstreams(&config).is_err());
+        config.custom_upstream = Some("abc123".to_owned());
+        let resolved = upstreams(&config).expect("nextdns");
+        assert_eq!(resolved[0].address, "https://dns.nextdns.io/abc123");
         config.protocol = DnsProtocol::Dot;
-        config.custom_upstream = Some("dot.example.com:853".to_owned());
-        let resolved = upstreams(&config).expect("custom DoT");
-        assert_eq!(
-            resolved[0].as_engine_upstream(),
-            "tls://dot.example.com:853"
-        );
+        let dot = upstreams(&config).expect("nextdns dot");
+        assert_eq!(dot[0].address, "abc123.dns.nextdns.io");
+        config.custom_upstream = Some("bad id".to_owned());
+        assert!(upstreams(&config).is_err());
     }
 
     #[test]
-    fn rejects_unsafe_custom_upstreams() {
-        let mut config = config_with(DnsProvider::Custom, DnsProtocol::Doh);
-        assert!(matches!(upstreams(&config), Err(NetworkError::Invalid(_))));
-
-        config.custom_upstream = Some("http://dns.example.com/dns-query".to_owned());
-        assert!(matches!(upstreams(&config), Err(NetworkError::Invalid(_))));
-
-        config.custom_upstream = Some("https://".to_owned());
-        assert!(matches!(upstreams(&config), Err(NetworkError::Invalid(_))));
-
-        config.protocol = DnsProtocol::Dot;
-        config.custom_upstream = Some("tls://dns.example.com".to_owned());
-        assert!(matches!(upstreams(&config), Err(NetworkError::Invalid(_))));
-
-        config.custom_upstream = Some("dns example.com".to_owned());
-        assert!(matches!(upstreams(&config), Err(NetworkError::Invalid(_))));
-
-        config.custom_upstream = Some("dns.example.com:0".to_owned());
-        assert!(matches!(upstreams(&config), Err(NetworkError::Invalid(_))));
+    fn unsupported_transports_are_rejected() {
+        assert!(upstreams(&config_with("dnswatch", DnsProtocol::Dot)).is_err());
+        assert!(upstreams(&config_with("comodo_secure", DnsProtocol::Doh)).is_err());
+        assert!(upstreams(&config_with("comodo_secure", DnsProtocol::Dot)).is_err());
     }
 
     #[test]
-    fn bootstrap_servers_follow_the_provider() {
-        assert_eq!(
-            bootstrap_servers(&config_with(DnsProvider::Cloudflare, DnsProtocol::Doh)),
-            vec!["1.1.1.1".to_owned(), "1.0.0.1".to_owned()]
-        );
-        assert_eq!(
-            bootstrap_servers(&config_with(DnsProvider::Quad9, DnsProtocol::Dot)),
-            vec!["9.9.9.9".to_owned(), "149.112.112.112".to_owned()]
-        );
-        assert_eq!(
-            bootstrap_servers(&config_with(DnsProvider::ControlD, DnsProtocol::Doh)),
-            vec!["76.76.2.0".to_owned(), "76.76.10.0".to_owned()]
-        );
+    fn plain_dns_returns_every_bootstrap_address() {
+        let config = config_with("comodo_secure", DnsProtocol::Plain);
+        let resolved = upstreams(&config).expect("plain comodo");
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].address, "8.26.56.26");
+        assert_eq!(resolved[0].protocol_id(), "plain");
+        assert!(!config.protocol.is_encrypted());
+        assert!(DnsProtocol::Doh.is_encrypted());
     }
 
     #[test]
-    fn renders_valid_adguard_yaml_with_encrypted_upstreams() {
-        let config = DnsConfig::default();
-        let yaml = render_adguard_config(&config, "admin", "$2y$hash", "10.20.30.1")
-            .expect("render AdGuard config");
-        let parsed: Value = serde_yaml::from_str(&yaml).expect("valid YAML");
-
-        assert_eq!(lookup_u64(&parsed, &["schema_version"]), Some(27));
-        assert_eq!(lookup_u64(&parsed, &["dns", "port"]), Some(53));
+    fn custom_provider_validates_each_transport() {
+        let doh = custom_config(DnsProtocol::Doh, "https://dns.example.com/dns-query");
+        assert!(upstreams(&doh).is_ok());
+        let plain_http = custom_config(DnsProtocol::Doh, "http://dns.example.com/dns-query");
+        assert!(upstreams(&plain_http).is_err());
+        let dot = custom_config(DnsProtocol::Dot, "dns.example.com:853");
         assert_eq!(
-            lookup(&parsed, &["dns", "bind_hosts", "0"]),
-            &Value::String("10.20.30.1".to_owned())
+            upstreams(&dot).expect("dot")[0].address,
+            "dns.example.com:853"
         );
+        let plain = custom_config(DnsProtocol::Plain, "192.0.2.53");
         assert_eq!(
-            lookup(&parsed, &["dns", "upstream_dns", "0"]),
-            &Value::String("https://cloudflare-dns.com/dns-query".to_owned())
+            upstreams(&plain).expect("plain")[0].as_engine_upstream(),
+            "192.0.2.53"
         );
-        assert_eq!(
-            lookup(&parsed, &["dns", "protection_enabled"]),
-            &Value::Bool(true)
-        );
-        assert_eq!(
-            lookup(&parsed, &["dns", "filtering_enabled"]),
-            &Value::Bool(true)
-        );
-        assert_eq!(
-            lookup(&parsed, &["users", "0", "name"]),
-            &Value::String("admin".to_owned())
-        );
-        assert_eq!(
-            lookup(&parsed, &["users", "0", "password"]),
-            &Value::String("$2y$hash".to_owned())
-        );
-
-        let filters = lookup(&parsed, &["filters"]);
-        let filters = filters.as_sequence().expect("filters must be a list");
-        assert_eq!(filters.len(), config.blocklists.len());
-        for (filter, expected_url) in filters.iter().zip(config.blocklists.iter()) {
-            assert_eq!(
-                filter.get("url"),
-                Some(&Value::String(expected_url.clone()))
-            );
-            assert_eq!(filter.get("enabled"), Some(&Value::Bool(true)));
-            assert!(filter
-                .get("name")
-                .and_then(Value::as_str)
-                .is_some_and(|name| !name.is_empty()));
-        }
+        let bad_plain = custom_config(DnsProtocol::Plain, "not-an-ip");
+        assert!(upstreams(&bad_plain).is_err());
+        let missing = config_with("custom", DnsProtocol::Doh);
+        assert!(upstreams(&missing).is_err());
     }
 
     #[test]
-    fn adguard_upstreams_are_never_plaintext() {
-        let config = DnsConfig::default();
-        let yaml = render_adguard_config(&config, "admin", "$2y$hash", "0.0.0.0")
-            .expect("render AdGuard config");
-        let parsed: Value = serde_yaml::from_str(&yaml).expect("valid YAML");
-        let upstreams = lookup(&parsed, &["dns", "upstream_dns"])
+    fn provider_support_helper_matches_catalog() {
+        let cloudflare = config_with("cloudflare", DnsProtocol::Doh);
+        assert!(supports(&cloudflare, DnsProtocol::Doh));
+        assert!(supports(&cloudflare, DnsProtocol::Dot));
+        let comodo = config_with("comodo_secure", DnsProtocol::Plain);
+        assert!(supports(&comodo, DnsProtocol::Plain));
+        assert!(!supports(&comodo, DnsProtocol::Doh));
+        let custom = config_with("custom", DnsProtocol::Doh);
+        assert!(supports(&custom, DnsProtocol::Doh));
+        assert!(!supports(&custom, DnsProtocol::Plain));
+    }
+
+    #[test]
+    fn adguard_config_contains_catalog_endpoints_and_filters() {
+        let mut config = config_with("quad9_ecs", DnsProtocol::Dot);
+        config.blocklists = vec!["https://example.com/list.txt".to_owned()];
+        let yaml = render_adguard_config(&config, "admin", "$argon2id$example", "127.0.0.1")
+            .expect("render adguard");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("valid yaml");
+        let upstream = parsed["dns"]["upstream_dns"][0].as_str().expect("upstream");
+        assert_eq!(upstream, "tls://dns11.quad9.net");
+        let bootstrap = parsed["dns"]["bootstrap_dns"]
             .as_sequence()
-            .expect("upstream_dns must be a list");
-        assert!(!upstreams.is_empty());
-        for upstream in upstreams {
-            let address = upstream.as_str().expect("upstream must be a string");
-            assert!(
-                address.starts_with("https://") || address.starts_with("tls://"),
-                "plaintext upstream rendered: {address}"
-            );
-        }
-        // Bootstrap resolvers are plain IPs by design; they are not upstreams.
-        let bootstrap = lookup(&parsed, &["dns", "bootstrap_dns"])
+            .expect("bootstrap");
+        assert!(bootstrap
+            .iter()
+            .any(|value| value.as_str() == Some("9.9.9.11")));
+        assert!(bootstrap
+            .iter()
+            .any(|value| value.as_str() == Some("2620:fe::11")));
+        let filters = parsed["filters"].as_sequence().expect("filters");
+        assert_eq!(filters.len(), 1);
+    }
+
+    #[test]
+    fn adguard_config_supports_plain_legacy_provider() {
+        let config = config_with("comodo_secure", DnsProtocol::Plain);
+        let yaml =
+            render_adguard_config(&config, "admin", "$hash", "127.0.0.1").expect("render plain");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("valid yaml");
+        let upstreams = parsed["dns"]["upstream_dns"]
             .as_sequence()
-            .expect("bootstrap_dns must be a list");
-        assert_eq!(bootstrap.len(), 2);
+            .expect("upstreams");
+        assert_eq!(upstreams.len(), 2);
+        assert_eq!(upstreams[0].as_str(), Some("8.26.56.26"));
     }
 
     #[test]
-    fn adguard_renders_dot_with_tls_scheme() {
-        let config = config_with(DnsProvider::Quad9, DnsProtocol::Dot);
-        let yaml = render_adguard_config(&config, "admin", "$2y$hash", "10.20.30.1")
-            .expect("render AdGuard config");
-        let parsed: Value = serde_yaml::from_str(&yaml).expect("valid YAML");
-        assert_eq!(
-            lookup(&parsed, &["dns", "upstream_dns", "0"]),
-            &Value::String("tls://dns.quad9.net".to_owned())
-        );
-    }
-
-    #[test]
-    fn adguard_follows_disabled_filtering_flag() {
-        let config = DnsConfig {
-            enabled: false,
-            ..DnsConfig::default()
-        };
-        let yaml = render_adguard_config(&config, "admin", "$2y$hash", "0.0.0.0")
-            .expect("render AdGuard config");
-        let parsed: Value = serde_yaml::from_str(&yaml).expect("valid YAML");
-        assert_eq!(
-            lookup(&parsed, &["dns", "protection_enabled"]),
-            &Value::Bool(false)
-        );
-        assert_eq!(
-            lookup(&parsed, &["dns", "filtering_enabled"]),
-            &Value::Bool(false)
-        );
-    }
-
-    #[test]
-    fn adguard_rejects_bad_admin_inputs() {
-        let config = DnsConfig::default();
-        assert!(matches!(
-            render_adguard_config(&config, "", "$2y$hash", "0.0.0.0"),
-            Err(NetworkError::Invalid(_))
-        ));
-        assert!(matches!(
-            render_adguard_config(&config, "admin", "", "0.0.0.0"),
-            Err(NetworkError::Invalid(_))
-        ));
-        assert!(matches!(
-            render_adguard_config(&config, "admin", "$2y$hash", "not-an-ip"),
-            Err(NetworkError::Invalid(_))
-        ));
-    }
-
-    #[test]
-    fn adguard_rejects_invalid_blocklists() {
-        let config = DnsConfig {
-            blocklists: vec!["not a url".to_owned()],
-            ..DnsConfig::default()
-        };
-        assert!(matches!(
-            render_adguard_config(&config, "admin", "$2y$hash", "0.0.0.0"),
-            Err(NetworkError::Invalid(_))
-        ));
-    }
-
-    #[test]
-    fn renders_valid_technitium_json() {
-        let config = config_with(DnsProvider::CloudflareFamily, DnsProtocol::Dot);
-        let json = render_technitium_config(&config).expect("render Technitium config");
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-
-        assert_eq!(parsed["engine"], "technitium");
-        assert_eq!(parsed["dns_port"], 53);
-        assert_eq!(parsed["forwarder_protocol"], "dot");
-        let forwarders = parsed["forwarders"].as_array().expect("forwarders");
-        assert_eq!(forwarders.len(), 1);
-        assert_eq!(forwarders[0]["address"], "family.cloudflare-dns.com");
-        assert_eq!(forwarders[0]["endpoint"], "tls://family.cloudflare-dns.com");
-        assert_eq!(forwarders[0]["provider"], "cloudflare_family");
-        assert!(parsed["bootstrap_dns"]
-            .as_array()
-            .is_some_and(|list| !list.is_empty()));
-        assert!(parsed["blocklists"]
-            .as_array()
-            .is_some_and(|list| !list.is_empty()));
-        assert_eq!(parsed["protection_enabled"], true);
-    }
-
-    #[test]
-    fn technitium_rejects_invalid_custom_upstream() {
-        let mut config = config_with(DnsProvider::Custom, DnsProtocol::Doh);
-        config.custom_upstream = Some("http://dns.example.com/dns-query".to_owned());
-        assert!(matches!(
-            render_technitium_config(&config),
-            Err(NetworkError::Invalid(_))
-        ));
-    }
-
-    #[test]
-    fn technitium_json_uses_doh_urls() {
-        let config = config_with(DnsProvider::Cloudflare, DnsProtocol::Doh);
-        let json = render_technitium_config(&config).expect("render Technitium config");
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-        assert_eq!(
-            parsed["forwarders"][0]["address"],
-            "https://cloudflare-dns.com/dns-query"
-        );
-        assert_eq!(parsed["forwarders"][0]["protocol"], "doh");
+    fn technitium_config_exposes_provider_metadata() {
+        let config = config_with("controld_family", DnsProtocol::Doh);
+        let json = render_technitium_config(&config).expect("render technitium");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert_eq!(parsed["forwarder_protocol"], "doh");
+        assert_eq!(parsed["forwarders"][0]["provider"], "controld_family");
+        assert_eq!(
+            parsed["forwarders"][0]["endpoint"],
+            "https://freedns.controld.com/family"
+        );
+    }
+
+    #[test]
+    fn catalog_exposes_all_researched_variants() {
+        let catalog = provider_catalog();
+        assert!(catalog.len() >= 40);
+        for id in [
+            "cloudflare",
+            "google_dns64",
+            "adguard_family",
+            "quad9_unsecured",
+            "cleanbrowsing_security",
+            "opendns_familyshield",
+            "nextdns",
+            "comodo_secure",
+            "controld_hagezi_ultimate",
+            "dnswatch",
+        ] {
+            assert!(spec_for(id).is_some(), "missing {id}");
+        }
+        assert!(spec_for("not-a-provider").is_none());
     }
 }

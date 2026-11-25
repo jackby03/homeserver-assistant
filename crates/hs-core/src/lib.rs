@@ -26,14 +26,18 @@
 
 pub mod api;
 pub mod config;
+pub mod dns;
 pub mod error;
 pub mod events;
 pub mod models;
 pub mod state;
 pub mod validation;
+pub mod voice;
 
+pub use dns::{DnsProvider, DnsProviderSpec, DNS_PROVIDERS};
 pub use error::{CoreError, CoreResult};
 pub use state::{ConfigManager, Database, SecretStore, SecretVault};
+pub use voice::{WakeMatch, WakeWordMatcher};
 
 /// Default data directory used by the packaged appliance.
 pub const DEFAULT_DATA_DIR: &str = "/var/lib/homecore";

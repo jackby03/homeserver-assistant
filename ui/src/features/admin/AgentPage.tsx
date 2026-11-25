@@ -16,6 +16,7 @@ import { useToast } from '@/state/ToastProvider';
 import { ChatTester } from './agent/ChatTester';
 import { ProviderDialog } from './agent/ProviderDialog';
 import { ToolsSection } from './agent/ToolsSection';
+import { VoiceSection } from './agent/VoiceSection';
 import { WorkflowsSection } from './agent/WorkflowsSection';
 import { PROVIDER_LABEL_KEYS } from './agent/constants';
 
@@ -85,6 +86,8 @@ export function AgentPage(): React.JSX.Element {
           </>
         }
       />
+
+      <VoiceSection />
 
       {/* Providers ------------------------------------------------------------ */}
       <section className="space-y-3">

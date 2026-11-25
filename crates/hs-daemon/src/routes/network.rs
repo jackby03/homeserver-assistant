@@ -6,9 +6,7 @@ use axum::extract::State;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use hs_auth::Permission;
-use hs_core::config::{
-    DmzConfig, DnsConfig, DnsProvider, NetworkConfig, NetworkMode, StaticIpv4, SystemConfig,
-};
+use hs_core::config::{DmzConfig, DnsConfig, NetworkConfig, NetworkMode, StaticIpv4, SystemConfig};
 use hs_core::models::AuditOutcome;
 use hs_network::firewall::{self, FirewallPlan};
 use hs_network::interfaces::{self, InterfaceInfo};
@@ -96,15 +94,6 @@ pub struct NetworkResponse {
     pub config: NetworkConfig,
 }
 
-/// Provider selector entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DnsProviderInfo {
-    /// Stable id.
-    pub id: String,
-    /// Human readable label.
-    pub label: String,
-}
-
 /// Firewall view.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FirewallResponse {
@@ -157,7 +146,7 @@ async fn update_dns(
         AuditOutcome::Success,
         None,
         Some(serde_json::json!({
-            "provider": dns.provider.id(),
+            "provider": dns.provider.as_str(),
             "protocol": dns.protocol.id(),
             "enabled": dns.enabled,
             "blocklists": dns.blocklists.len(),
@@ -166,17 +155,14 @@ async fn update_dns(
     Ok(Json(updated))
 }
 
-async fn dns_providers(auth: AdminAuth) -> HttpResult<Json<Vec<DnsProviderInfo>>> {
+/// `GET /network/dns/providers`
+///
+/// Returns the complete free-DNS catalog (40 variants) with IPv4/IPv6
+/// bootstrap addresses, DoH/DoT endpoints and filtering notes. The UI groups
+/// the entries by `vendor`.
+async fn dns_providers(auth: AdminAuth) -> HttpResult<Json<Vec<hs_core::dns::DnsProviderSpec>>> {
     auth.require(Permission::NetworkRead)?;
-    Ok(Json(
-        DnsProvider::all()
-            .iter()
-            .map(|provider| DnsProviderInfo {
-                id: provider.id().to_owned(),
-                label: provider.label().to_owned(),
-            })
-            .collect(),
-    ))
+    Ok(Json(hs_core::dns::DNS_PROVIDERS.to_vec()))
 }
 
 async fn update_dmz(
@@ -265,7 +251,7 @@ async fn test_dns(
     let config = state.config_snapshot();
     let dns = config.network.dns;
     let (host, port) = probe_target(&dns);
-    let provider = dns.provider.id().to_owned();
+    let provider = dns.provider.as_str().to_owned();
     let started = Instant::now();
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(3),
@@ -327,7 +313,13 @@ fn build_plan(config: &SystemConfig) -> Result<FirewallPlan, HttpError> {
 }
 
 fn probe_target(dns: &DnsConfig) -> (String, u16) {
-    if dns.provider == DnsProvider::Custom {
+    let port = match dns.protocol {
+        hs_core::config::DnsProtocol::Doh => 443,
+        hs_core::config::DnsProtocol::Dot => 853,
+        hs_core::config::DnsProtocol::Plain => 53,
+    };
+
+    if dns.provider.is_custom() {
         if let Some(upstream) = &dns.custom_upstream {
             let rest = upstream
                 .trim_start_matches("https://")
@@ -339,16 +331,28 @@ fn probe_target(dns: &DnsConfig) -> (String, u16) {
                 .split(':')
                 .next()
                 .unwrap_or(rest);
-            return (host.to_owned(), 443);
+            if !host.is_empty() {
+                return (host.to_owned(), port);
+            }
         }
     }
-    let host = match dns.provider {
-        DnsProvider::Cloudflare
-        | DnsProvider::CloudflareMalware
-        | DnsProvider::CloudflareFamily => "1.1.1.1",
-        DnsProvider::Quad9 => "9.9.9.9",
-        DnsProvider::ControlD => "76.76.2.0",
-        DnsProvider::Custom => "1.1.1.1",
-    };
-    (host.to_owned(), 443)
+
+    if let Some(spec) = dns.provider.spec() {
+        if let Some(address) = spec.ipv4.first().or_else(|| spec.ipv6.first()) {
+            return ((*address).to_owned(), port);
+        }
+        if let Some(doh) = spec.doh {
+            let host = doh
+                .trim_start_matches("https://")
+                .split('/')
+                .next()
+                .unwrap_or(doh);
+            return (host.to_owned(), port);
+        }
+        if let Some(dot) = spec.dot {
+            return (dot.split(':').next().unwrap_or(dot).to_owned(), port);
+        }
+    }
+
+    ("1.1.1.1".to_owned(), port)
 }

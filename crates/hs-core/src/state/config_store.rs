@@ -148,7 +148,7 @@ mod tests {
                 .update(|config| {
                     config.device.name = "Salón".to_owned();
                     config.initialized = true;
-                    config.network.dns.provider = DnsProvider::Quad9;
+                    config.network.dns.provider = DnsProvider::quad9();
                     Ok(())
                 })
                 .unwrap();
@@ -156,7 +156,10 @@ mod tests {
         let manager = ConfigManager::load(dir.path()).unwrap();
         assert_eq!(manager.snapshot().device.name, "Salón");
         assert!(manager.snapshot().initialized);
-        assert_eq!(manager.snapshot().network.dns.provider, DnsProvider::Quad9);
+        assert_eq!(
+            manager.snapshot().network.dns.provider,
+            DnsProvider::quad9()
+        );
     }
 
     #[test]

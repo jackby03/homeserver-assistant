@@ -64,6 +64,9 @@ jobs:
             echo "checking $file"
             bash -n "$file"
           done
+      - name: Validate Python helpers (syntax only)
+        run: |
+          python3 -m py_compile voice/wakeword.py vision/python/face_embed.py
       - name: Validate YAML templates
         run: |
           python3 - <<'PY'
@@ -80,3 +83,4 @@ jobs:
                   failed = True
           sys.exit(1 if failed else 0)
           PY
+

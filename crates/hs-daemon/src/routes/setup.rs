@@ -204,7 +204,7 @@ async fn setup_network(
         None,
         Some(serde_json::json!({
             "interface": updated.network.interface,
-            "dns_provider": updated.network.dns.provider.id(),
+            "dns_provider": updated.network.dns.provider.as_str(),
             "dns_protocol": updated.network.dns.protocol.id(),
             "dmz_enabled": updated.network.dmz.enabled,
         })),

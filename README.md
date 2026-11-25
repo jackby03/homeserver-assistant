@@ -49,14 +49,20 @@ visión 100 % local.
   `LAN` o `DMZ`, variables de entorno, subdominio y proxy inverso.
 - **Home Assistant + IoT**: aprovisionamiento, estado, entidades, escenas y
   adopción de dispositivos descubiertos por mDNS/SSDP/ARP.
-- **Red y seguridad**: IP estática/DHCP, proveedor DNS cifrado (Cloudflare
-  estándar/malware/family, Quad9, ControlD o custom) sobre **DoH/DoT**, listas
-  de bloqueo, subred DMZ con `nftables` (aislada de la LAN y del puerto de
+- **Red y seguridad**: IP estática/DHCP, **catálogo de 40 variantes DNS gratuitas**
+  (Cloudflare, Google, AdGuard, Quad9, CleanBrowsing, OpenDNS, NextDNS, Comodo,
+  Control D con 13 listas comunitarias, DNS.WATCH o custom) con IPv4/IPv6,
+  **DoH/DoT** (y DNS sin cifrar solo para proveedores heredados), listas de
+  bloqueo, subred DMZ con `nftables` (aislada de la LAN y del puerto de
   administración pero con salida a Internet enmascarada para actualizaciones y
   túneles), y túneles salientes (Cloudflare Tunnel / WireGuard).
 - **IA y perfiles**: proveedores OpenAI, Anthropic, DeepSeek, opencode-go y
   endpoints compatibles, claves cifradas, herramientas con permisos por perfil,
   workflows tipo nodo y perfiles familiares con avatar y biometría local.
+- **Asistente de voz siempre activo**: se activa llamándolo por su nombre (nombre
+  personalizable, por defecto `Aura`), con sensibilidad, ventana de escucha y
+  modo nombre/botón configurables; el reconocimiento de voz y las transcripciones
+  se procesan **100 % en local**.
 
 ### Kiosko de pared (pantalla completa)
 
@@ -153,6 +159,7 @@ homeserver-assistant/
 │   ├── hs-vision/               # servicio de seguimiento local (+ binario)
 │   └── hs-daemon/               # API HTTP/WS, kiosko, adaptadores y composition root
 ├── ui/                          # SPA React (wizard, admin, kiosko)
+├── voice/                       # listener local de wake word (STT local opcional)
 ├── vision/python/               # helper opcional InsightFace (local)
 ├── infra/                       # incus preseed, nftables, systemd, servicios
 ├── iso/                         # autoinstall Ubuntu + build-iso.sh + test QEMU
@@ -206,10 +213,10 @@ Resultados de la última ejecución en el entorno de desarrollo (Windows):
 
 | Comprobación | Resultado |
 |---|---|
-| `cargo test --workspace --offline --lib --tests` | **405 tests, 0 fallos** (17 binarios de test) |
+| `cargo test --workspace --offline --lib --tests` | **430 tests, 0 fallos** (17 binarios de test) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | limpio |
 | `cargo fmt --all -- --check` | limpio |
-| `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 20 tests / `ui/dist` 0,90 MB |
+| `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 20 tests / `ui/dist` 0,91 MB |
 | `python3 scripts/check-assets.py` | 75 comprobaciones, 0 fallos |
 | Smoke del daemon real (`serve --dev`) | `/api/v1/health`, `/setup/status`, UI admin y `/kiosk` con cookie responden 200 |
 | ShellCheck de los scripts (por el agente de infraestructura) | 0 avisos en 7 scripts |
@@ -290,8 +297,9 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | API admin + kiosko, wizard, WebSockets | ✅ Implementado; 18 tests de integración HTTP |
 | Motor Incus, snapshots, apps | ✅ Adaptador nativo + mock; validación real en host Linux |
 | Despliegue de apps con Caddy | ✅ Snippets `apps.d` por app, recarga automática |
-| DNS DoH/DoT, nftables, DMZ, netplan | ✅ Renderizado/golden tests; salida DMZ con NAT; aplicación real en Linux |
+| DNS DoH/DoT, nftables, DMZ, netplan | ✅ Catálogo de 40 variantes, renderizado/golden tests; aplicación real en Linux |
 | Home Assistant + descubrimiento IoT | ✅ Implementado con transportes simulados en tests |
+| Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional |
 | Agente IA, herramientas, workflows, perfiles | ✅ 10 herramientas con permisos por perfil y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
 | UI (admin, kiosko, wizard) | ✅ Type-check, 15 tests y build de producción (0,90 MB) |
@@ -310,6 +318,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — hardware, instalación, TLS, backups.
 - [`docs/ISO.md`](docs/ISO.md) — construcción y prueba de la ISO.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — entorno de desarrollo y tests.
+- [`voice/README.md`](voice/README.md) — wake word local y STT sin nube.
 - [`docs/adr/`](docs/adr/) — decisiones de arquitectura.
 - [`AGENTS.md`](AGENTS.md) — reglas para contribuir (humanos y agentes de IA).
 
@@ -318,3 +327,4 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+

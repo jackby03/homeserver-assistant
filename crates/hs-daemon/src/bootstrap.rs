@@ -127,6 +127,10 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
         events.clone(),
         config.device.name.clone(),
     ));
+    let voice = Arc::new(crate::voice::VoiceManager::new(
+        Arc::clone(&config_manager),
+        Arc::clone(&kiosk),
+    ));
     let setup = Arc::new(SetupCoordinator::new(events.clone()));
 
     let state = Arc::new(AppState {
@@ -144,6 +148,7 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
         tools,
         agent,
         kiosk,
+        voice,
         events,
         discovery_devices: RwLock::new(Vec::new()),
         setup,

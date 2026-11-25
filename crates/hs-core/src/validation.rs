@@ -264,6 +264,43 @@ pub fn instance_name(value: &str) -> CoreResult<()> {
     }
 }
 
+/// Assistant wake-word name shown to the household (`Aura`, `Casa`, `Jarvis`).
+///
+/// The name is spoken by the household and matched locally against transcripts,
+/// so it accepts letters, digits, spaces, hyphens and apostrophes. At least one
+/// letter is required to avoid names that normalize to nothing.
+pub fn assistant_name(value: &str) -> CoreResult<()> {
+    let trimmed = value.trim();
+    let length = trimmed.chars().count();
+    if !(2..=32).contains(&length) {
+        return Err(CoreError::validation(
+            "assistant_name",
+            "must be between 2 and 32 characters",
+        ));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(CoreError::validation(
+            "assistant_name",
+            "must not contain control characters",
+        ));
+    }
+    if !trimmed.chars().all(|character| {
+        character.is_alphabetic() || character.is_numeric() || matches!(character, ' ' | '-' | '\'')
+    }) {
+        return Err(CoreError::validation(
+            "assistant_name",
+            "only letters, digits, spaces, hyphens and apostrophes are allowed",
+        ));
+    }
+    if !trimmed.chars().any(char::is_alphabetic) {
+        return Err(CoreError::validation(
+            "assistant_name",
+            "must contain at least one letter",
+        ));
+    }
+    Ok(())
+}
+
 /// An HTTP(S) URL using a host, and optionally a port and path.
 pub fn http_url(value: &str) -> CoreResult<()> {
     let valid = (value.starts_with("https://") || value.starts_with("http://"))
