@@ -57,6 +57,14 @@ SILENCE_SECONDS = 1.2
 DEFAULT_THRESHOLD = 0.004
 DEFAULT_ASSISTANT_NAME = "Aura"
 
+# Console output is UTF-8 even on Windows consoles with a legacy code page;
+# agent replies may contain emoji that cp1252 cannot encode.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
 
 def read_kiosk_token(config_path: Path) -> str:
     """Read the kiosk token from the daemon config file (local, root-readable)."""
@@ -246,6 +254,69 @@ def transcribe(
         return ""
 
 
+def play_wav(path: Path) -> bool:
+    """Play a local 16-bit WAV through the default output (headphones)."""
+    try:
+        import wave
+
+        with wave.open(str(path), "rb") as handle:
+            channels = handle.getnchannels()
+            width = handle.getsampwidth()
+            rate = handle.getframerate()
+            frames = handle.readframes(handle.getnframes())
+        if width == 2:
+            samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        elif width == 4:
+            samples = np.frombuffer(frames, dtype=np.int32).astype(np.float32) / 2147483648.0
+        else:
+            print(f"[wakeword] unsupported WAV width {width}", file=sys.stderr)
+            return False
+        if channels > 1:
+            samples = samples.reshape(-1, channels).mean(axis=1)
+        sd.play(samples, rate)
+        sd.wait()
+        return True
+    except Exception as error:
+        print(f"[wakeword] WAV playback failed: {error}", file=sys.stderr)
+        return False
+
+
+def piper_speak(executable: str, model: str, text: str) -> bool:
+    """Synthesize with the local Piper neural voice and play the WAV."""
+    if not executable or not model or not text:
+        return False
+    import subprocess as local_subprocess
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="hs-piper-") as directory:
+            wav = Path(directory) / "speech.wav"
+            result = local_subprocess.run(
+                [executable, "-m", model, "-f", str(wav)],
+                input=text,
+                text=True,
+                capture_output=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                print(
+                    f"[wakeword] piper failed: {result.stderr.strip()[:300]}",
+                    file=sys.stderr,
+                )
+                return False
+            return play_wav(wav)
+    except Exception as error:
+        print(f"[wakeword] piper error: {error}", file=sys.stderr)
+        return False
+
+
+def say(text: str, args: argparse.Namespace) -> bool:
+    """Prefer the local neural voice, then an external TTS command."""
+    if piper_speak(args.piper_exe, args.piper_model, text):
+        return True
+    return speak(args.tts_command, text)
+
+
 def beep() -> None:
     """Short local listening cue played through the default audio output."""
     try:
@@ -267,13 +338,11 @@ def beep() -> None:
         pass
 
 
-def prompt_listening(command: str | None, language: str) -> None:
-    """Tell the user to speak: local voice when allowed, otherwise a tone."""
-    text = "Te escucho." if language == "es" else "I'm listening."
-    if command:
-        result = speak(command, text)
-        if result:
-            return
+def prompt_listening(args: argparse.Namespace) -> None:
+    """Tell the user to speak with the local voice, else a short tone."""
+    text = "Te escucho." if args.language == "es" else "I'm listening."
+    if say(text, args):
+        return
     beep()
 
 
@@ -360,6 +429,16 @@ def main() -> int:
         "--tts-command",
         default="",
         help="optional local TTS command reading text on stdin (e.g. piper --model ...)",
+    )
+    parser.add_argument(
+        "--piper-exe",
+        default="",
+        help="Piper neural TTS executable (preferred over --tts-command)",
+    )
+    parser.add_argument(
+        "--piper-model",
+        default="",
+        help="Piper .onnx voice model",
     )
     args = parser.parse_args()
 
@@ -475,7 +554,7 @@ def main() -> int:
             # Tell the user to speak: local voice when allowed, otherwise a
             # short tone through the headset (Windows blocks SAPI in background
             # processes, but PortAudio output works).
-            prompt_listening(args.tts_command or None, args.language)
+            prompt_listening(args)
             try:
                 request_audio = record_until_silence(
                     QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
@@ -495,13 +574,14 @@ def main() -> int:
             continue
 
         print(f"[wakeword] request: {query}")
+        use_local_tts = bool(args.piper_exe and args.piper_model)
         try:
             response = post_json(
                 f"{args.url}/api/v1/kiosk/agent/query",
                 token,
-                # The helper speaks the reply itself; do not duplicate it in
-                # the kiosk when the query came from the microphone helper.
-                {"text": query, "speak": True},
+                # With Piper the helper speaks the reply itself; otherwise the
+                # kiosk speaks it with the browser's local voices.
+                {"text": query, "speak": not use_local_tts},
             )
         except (urllib.error.URLError, TimeoutError, ValueError) as error:
             print(f"[wakeword] agent query failed: {error}", file=sys.stderr)
@@ -511,7 +591,8 @@ def main() -> int:
 
         reply = str(response.get("reply", "")).strip()
         print(f"[wakeword] reply: {reply}")
-        speak(args.tts_command or None, reply)
+        if use_local_tts:
+            say(reply, args)
         if args.once:
             return 0
 

@@ -71,6 +71,34 @@ python voice/wakeword.py --auto-input --model base   # pick the strongest mic
 `--auto-input` samples every microphone, selects the one with the strongest
 signal and sets the RMS threshold safely above its noise floor.
 
+## Natural neural voice (Piper, recommended)
+
+The appliance can speak with a local neural voice instead of the robotic SAPI
+voices. Piper is small, CPU-only and runs fully offline (~77 MB voice model,
+~200 MB RAM while synthesizing):
+
+```bash
+pip install piper-tts
+# Spanish voice (download once from huggingface.co/rhasspy/piper-voices)
+mkdir -p /opt/piper && cd /opt/piper
+curl -L -O https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx
+curl -L -O https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json
+
+python voice/wakeword.py ... \
+  --piper-exe piper \
+  --piper-model /opt/piper/es_ES-sharvard-medium.onnx
+```
+
+With `--piper-exe/--piper-model` the helper synthesizes and plays the
+"Te escucho" prompt and the assistant replies itself; without Piper it falls back
+to the optional `--tts-command`, then to a short listening tone, while the kiosk
+can speak replies with the browser's local voices.
+
+On this Windows demo the tested paths are:
+`.demo\voice-venv\Scripts\piper.exe` and
+`.demo\piper\es_ES-sharvard-medium.onnx` (these downloaded artifacts live under
+the git-ignored `.demo/` directory).
+
 ## Run
 
 ```bash
@@ -155,5 +183,6 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 
 
