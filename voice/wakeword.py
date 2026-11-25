@@ -51,9 +51,11 @@ except ImportError as error:  # pragma: no cover - dependency guidance
 SAMPLE_RATE = 16_000
 DEFAULT_CONFIG = Path("/var/lib/homecore/config.json")
 DEFAULT_URL = "http://127.0.0.1:3000"
-WAKE_WINDOW_SECONDS = 1.8
+WAKE_WINDOW_SECONDS = 2.4
 QUERY_MAX_SECONDS = 9.0
 SILENCE_SECONDS = 1.2
+DEFAULT_THRESHOLD = 0.004
+DEFAULT_ASSISTANT_NAME = "Aura"
 
 
 def read_kiosk_token(config_path: Path) -> str:
@@ -92,13 +94,77 @@ def post_json(url: str, token: str, payload: dict) -> dict:
     return json.loads(body) if body else {}
 
 
+def get_json(url: str, token: str) -> dict:
+    request = urllib.request.Request(url, headers={"X-Kiosk-Token": token})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        body = response.read().decode("utf-8")
+    return json.loads(body) if body else {}
+
+
+def fetch_assistant_name(url: str, token: str) -> str:
+    """Read the configured assistant name from the kiosk state."""
+    try:
+        state = get_json(f"{url}/api/v1/kiosk/state", token)
+        name = str(state.get("assistant_name", "")).strip()
+        if name:
+            return name
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        pass
+    return DEFAULT_ASSISTANT_NAME
+
+
+def input_devices() -> list[tuple[int, dict]]:
+    return [
+        (index, device)
+        for index, device in enumerate(sd.query_devices())
+        if device["max_input_channels"] > 0
+    ]
+
+
+def print_input_devices() -> None:
+    print("[wakeword] input devices:")
+    for index, device in input_devices():
+        print(f"  [{index:2d}] {device['name']} (host API {device['hostapi']})")
+
+
+def sample_level(device: int, seconds: float = 0.5) -> float | None:
+    try:
+        audio = sd.rec(
+            int(seconds * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            device=device,
+            dtype="float32",
+        )
+        sd.wait()
+        return rms(audio.flatten())
+    except Exception:  # unsupported host API/sample rate: skip this device
+        return None
+
+
+def choose_input_device() -> tuple[int, float] | None:
+    """Pick the input device with the strongest live signal (levels in dBFS)."""
+    best: tuple[float, int] | None = None
+    for index, device in input_devices():
+        level = sample_level(index)
+        if level is None:
+            continue
+        print(f"[wakeword] input [{index:2d}] level={level:.6f} {device['name']}")
+        if level > 0.0005 and (best is None or level > best[0]):
+            best = (level, index)
+    if best is None:
+        return None
+    print(f"[wakeword] auto-selected input device [{best[1]}]")
+    return best[1], best[0]
+
+
 def rms(block: np.ndarray) -> float:
     if block.size == 0:
         return 0.0
     return float(np.sqrt(np.mean(np.square(block, dtype=np.float64))))
 
 
-def record_window(seconds: float, device: str | None) -> np.ndarray:
+def record_window(seconds: float, device: str | int | None) -> np.ndarray:
     frames = int(seconds * SAMPLE_RATE)
     audio = sd.rec(frames, samplerate=SAMPLE_RATE, channels=1, dtype="float32", device=device)
     sd.wait()
@@ -106,7 +172,10 @@ def record_window(seconds: float, device: str | None) -> np.ndarray:
 
 
 def record_until_silence(
-    max_seconds: float, silence_seconds: float, threshold: float, device: str | None
+    max_seconds: float,
+    silence_seconds: float,
+    threshold: float,
+    device: str | int | None,
 ) -> np.ndarray:
     """Record the user's request, stopping after `silence_seconds` of quiet."""
     chunk = 0.1
@@ -129,15 +198,27 @@ def record_until_silence(
     return np.concatenate(blocks) if blocks else np.zeros(0, dtype="float32")
 
 
-def transcribe(model: WhisperModel, audio: np.ndarray, language: str) -> str:
-    segments, _info = model.transcribe(
-        audio,
-        language=language if language in {"es", "en"} else None,
-        beam_size=1,
-        vad_filter=True,
-        condition_on_previous_text=False,
-    )
-    return " ".join(segment.text.strip() for segment in segments).strip()
+def transcribe(
+    model: WhisperModel,
+    audio: np.ndarray,
+    language: str,
+    initial_prompt: str | None = None,
+    beam_size: int = 3,
+) -> str:
+    """Transcribe a window locally; model/driver failures must not kill the loop."""
+    try:
+        segments, _info = model.transcribe(
+            audio,
+            language=language if language in {"es", "en"} else None,
+            beam_size=beam_size,
+            vad_filter=True,
+            condition_on_previous_text=False,
+            initial_prompt=initial_prompt,
+        )
+        return " ".join(segment.text.strip() for segment in segments).strip()
+    except Exception as error:  # local model/driver failure: keep listening
+        print(f"[wakeword] transcription failed: {error}", file=sys.stderr)
+        return ""
 
 
 def speak(command: str | None, text: str) -> None:
@@ -165,11 +246,55 @@ def main() -> int:
     parser.add_argument(
         "--config", type=Path, default=DEFAULT_CONFIG, help="daemon config.json"
     )
-    parser.add_argument("--model", default="tiny", help="faster-whisper model name/path")
-    parser.add_argument("--language", default="es", help="STT language (es/en)")
-    parser.add_argument("--device", default=None, help="audio input device")
     parser.add_argument(
-        "--threshold", type=float, default=0.012, help="RMS silence threshold"
+        "--model",
+        default="base",
+        help="faster-whisper model (tiny|base|small); base balances accuracy and memory",
+    )
+    parser.add_argument("--language", default="es", help="STT language (es/en)")
+    parser.add_argument(
+        "--stt-device",
+        default="cpu",
+        choices=["cpu", "cuda", "auto"],
+        help="inference device for the local model (default: cpu)",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        type=lambda value: int(value) if value.isdigit() else value,
+        help="audio input device index/name (default: system default)",
+    )
+    parser.add_argument(
+        "--auto-input",
+        action="store_true",
+        help="probe all microphones and use the one with the strongest signal",
+    )
+    parser.add_argument(
+        "--list-devices", action="store_true", help="list microphones and exit"
+    )
+    parser.add_argument(
+        "--calibrate",
+        action="store_true",
+        help="measure 3 seconds of microphone level and exit",
+    )
+    parser.add_argument(
+        "--assistant-name",
+        default="",
+        help="wake name (default: read from the kiosk state)",
+    )
+    parser.add_argument(
+        "--initial-prompt",
+        default="",
+        help="Whisper prompt bias; defaults to the assistant name",
+    )
+    parser.add_argument(
+        "--beam-size", type=int, default=3, help="Whisper beam size"
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=DEFAULT_THRESHOLD,
+        help="RMS silence threshold",
     )
     parser.add_argument("--once", action="store_true", help="process a single window and exit")
     parser.add_argument(
@@ -179,12 +304,48 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.list_devices:
+        print_input_devices()
+        return 0
+
+    device = args.device
+    if args.calibrate:
+        level = rms(record_window(3.0, device))
+        print(f"[wakeword] microphone RMS over 3 s: {level:.6f}")
+        print(f"[wakeword] suggested threshold: {max(0.002, level * 0.4):.6f}")
+        return 0
+    if args.auto_input and device is None:
+        choice = choose_input_device()
+        if choice is not None:
+            device, ambient = choice
+            # Keep a margin over the room noise floor so the helper does not
+            # transcribe every fan/speaker hum as speech.
+            args.threshold = max(args.threshold, ambient * 1.25)
+
     token = args.token.strip() or read_kiosk_token(args.config)
+    assistant_name = args.assistant_name.strip() or fetch_assistant_name(
+        args.url, token
+    )
+    initial_prompt = args.initial_prompt.strip() or (
+        f"Oye {assistant_name}. Hola {assistant_name}."
+    )
+    try:
+        input_name = sd.query_devices(device)["name"] if device is not None else sd.query_devices(kind="input")["name"]
+    except Exception:
+        input_name = str(device)
+    print(
+        f"[wakeword] assistant='{assistant_name}' input='{input_name}' "
+        f"threshold={args.threshold:.4f}"
+    )
     print(f"[wakeword] loading local STT model '{args.model}' (first run downloads it)")
-    model = WhisperModel(args.model, device="auto", compute_type="int8")
+    # CPU is the safe default: CUDA builds need cublas/cuDNN libraries that an
+    # appliance (or this Windows host) may not have. Use --stt-device cuda to
+    # opt into GPU inference when the runtime is installed.
+    model = WhisperModel(args.model, device=args.stt_device, compute_type="int8")
     print(f"[wakeword] listening locally; wake endpoint {args.url}/api/v1/kiosk/wake")
 
     last_heartbeat = 0.0
+    silent_windows = 0
     while True:
         # Tell the daemon that a local microphone listener is alive; the portal
         # shows "listener connected" only while these heartbeats arrive.
@@ -198,15 +359,27 @@ def main() -> int:
                 pass
             last_heartbeat = now
 
-        window = record_window(WAKE_WINDOW_SECONDS, args.device)
-        if rms(window) < args.threshold:
+        window = record_window(WAKE_WINDOW_SECONDS, device)
+        level = rms(window)
+        if level < args.threshold:
+            silent_windows += 1
+            if silent_windows == 1 or silent_windows % 30 == 0:
+                print(
+                    f"[wakeword] level={level:.6f} below threshold "
+                    f"({args.threshold:.4f}); waiting for speech"
+                )
             if args.once:
                 print("[wakeword] silence; no wake word detected")
                 return 0
             continue
-        transcript = transcribe(model, window, args.language)
+        silent_windows = 0
+        started = time.monotonic()
+        transcript = transcribe(
+            model, window, args.language, initial_prompt, args.beam_size
+        )
+        elapsed = time.monotonic() - started
         if transcript:
-            print(f"[wakeword] heard: {transcript}")
+            print(f"[wakeword] heard ({elapsed:.2f}s): {transcript}")
         try:
             outcome = post_json(
                 f"{args.url}/api/v1/kiosk/wake",
@@ -231,9 +404,9 @@ def main() -> int:
         query = trailing
         if not query:
             request_audio = record_until_silence(
-                QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, args.device
+                QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
             )
-            query = transcribe(model, request_audio, args.language)
+            query = transcribe(model, request_audio, args.language, beam_size=args.beam_size)
         if not query:
             print("[wakeword] no request after the wake word")
             if args.once:
@@ -243,7 +416,11 @@ def main() -> int:
         print(f"[wakeword] request: {query}")
         try:
             response = post_json(
-                f"{args.url}/api/v1/kiosk/agent/query", token, {"text": query}
+                f"{args.url}/api/v1/kiosk/agent/query",
+                token,
+                # The helper speaks the reply itself; do not duplicate it in
+                # the kiosk when the query came from the microphone helper.
+                {"text": query, "speak": False},
             )
         except (urllib.error.URLError, TimeoutError, ValueError) as error:
             print(f"[wakeword] agent query failed: {error}", file=sys.stderr)
@@ -260,3 +437,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+

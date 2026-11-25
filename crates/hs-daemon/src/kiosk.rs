@@ -203,6 +203,15 @@ impl KioskManager {
         });
     }
 
+    /// Ask the kiosk to speak an assistant reply with its local voice.
+    pub fn speak(&self, text: impl Into<String>) {
+        let text = text.into();
+        if text.trim().is_empty() {
+            return;
+        }
+        self.bus.publish_kiosk(KioskEvent::Speech { text });
+    }
+
     /// Access the kiosk event bus (used by WebSocket handlers).
     #[must_use]
     pub fn bus(&self) -> &EventBus {

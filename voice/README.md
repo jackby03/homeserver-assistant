@@ -45,6 +45,32 @@ export HF_HUB_OFFLINE=1
 Use a bigger model (`base`, `small`) for better accuracy on low-power hardware
 trade-off. `tiny` runs comfortably on a laptop CPU.
 
+## Model size guide (local, int8 CPU)
+
+| Model | Disk | RAM (approx.) | Accuracy / speed |
+|---|---|---|---|
+| `tiny` | ~75 MB | ~150 MB | fastest, weaker with short names |
+| `base` (default) | ~145 MB | ~250 MB | good Spanish, real-time on a laptop CPU |
+| `small` | ~466 MB | ~600 MB | better accuracy, slower (~2-3× base) |
+
+The default is `base` with `beam_size=3`, VAD and an initial prompt containing
+the assistant name, which reduces the "Aura -> Laura/ahora" errors. Larger
+options such as Qwen3-ASR, NVIDIA Nemotron Speech or CosyVoice/Fish are heavier
+(1-4 GB plus extra runtimes) and are not needed for a low-memory appliance;
+CosyVoice/Fish are TTS models, not ASR. Use `--model small` when accuracy matters
+more than CPU, and `--model tiny` on very weak hardware.
+
+Useful input diagnostics:
+
+```powershell
+python voice/wakeword.py --list-devices
+python voice/wakeword.py --calibrate --device 22
+python voice/wakeword.py --auto-input --model base   # pick the strongest mic
+```
+
+`--auto-input` samples every microphone, selects the one with the strongest
+signal and sets the RMS threshold safely above its noise floor.
+
 ## Run
 
 ```bash
@@ -129,4 +155,5 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 

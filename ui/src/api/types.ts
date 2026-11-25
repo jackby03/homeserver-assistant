@@ -826,6 +826,7 @@ export type KioskEvent =
   | { type: 'tracking'; point: TrackingPoint | null }
   | { type: 'profile_activated'; profile: Profile }
   | { type: 'wake'; assistant_name: string; trailing_query: string | null }
+  | { type: 'speech'; text: string }
   | { type: 'music'; state: MusicState }
   | { type: 'agent'; activity: AgentActivity }
   | { type: 'network'; status: NetworkHealth }
@@ -870,3 +871,4 @@ export function isKioskEvent(value: unknown): value is KioskEvent {
     'notification',
   ].includes(value.type);
 }
+
