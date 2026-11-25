@@ -41,6 +41,7 @@ import type {
 import { ReconnectingSocket } from '@/api/ws';
 import type { SocketStatus } from '@/api/ws';
 import { AvatarFigure } from '@/components/Avatar';
+import { BoopAvatar } from '@/components/BoopAvatar';
 import { Spinner } from '@/components/Spinner';
 import { StatusPill } from '@/components/StatusPill';
 import { errorMessageKey, useI18n } from '@/i18n/I18nProvider';
@@ -940,7 +941,7 @@ export function KioskPage(): React.JSX.Element {
             ) : (
               <span className="h-10" aria-hidden="true" />
             )}
-            <AvatarFigure
+            <BoopAvatar
               avatar={
                 profile?.avatar ?? {
                   shape: 'squircle',
@@ -950,8 +951,8 @@ export function KioskPage(): React.JSX.Element {
                 }
               }
               state={avatarState}
-              tracking={tracking}
               size={avatarSize}
+              tracking={tracking}
               className="transition-transform duration-500 group-hover:scale-[1.01]"
             />
           </button>
