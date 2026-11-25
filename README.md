@@ -59,6 +59,10 @@ visión 100 % local.
 - **IA y perfiles**: proveedores OpenAI, Anthropic, DeepSeek, opencode-go y
   endpoints compatibles, claves cifradas, herramientas con permisos por perfil,
   workflows tipo nodo y perfiles familiares con avatar y biometría local.
+- **Asistente local-first**: router de comandos en español que resuelve sin IA
+  ni Internet la hora/fecha, volumen, música, luces y escenas de Home Assistant,
+  cálculos, chistes, identidad y ayuda. Solo las preguntas que no cubre pasan al
+  LLM configurado (con permisos por perfil también para las acciones locales).
 - **Asistente de voz siempre activo**: se activa llamándolo por su nombre (nombre
   personalizable, por defecto `Aura`), con sensibilidad, ventana de escucha y
   modo nombre/botón configurables; el reconocimiento de voz y las transcripciones
@@ -213,7 +217,7 @@ Resultados de la última ejecución en el entorno de desarrollo (Windows):
 
 | Comprobación | Resultado |
 |---|---|
-| `cargo test --workspace --offline --lib --tests` | **436 tests, 0 fallos** (17 binarios de test) |
+| `cargo test --workspace --offline --lib --tests` | **442 tests, 0 fallos** (17 binarios de test) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | limpio |
 | `cargo fmt --all -- --check` | limpio |
 | `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 20 tests / `ui/dist` 0,91 MB |
@@ -327,6 +331,8 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
+
 
 
 

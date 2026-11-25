@@ -13,7 +13,9 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use hs_core::events::{AgentActivity, AvatarState, MusicState};
-use hs_core::models::{AgentChatRequest, ChatMessage, ChatRole, Profile};
+use hs_core::models::{
+    AgentChatRequest, AgentChatResponse, ChatMessage, ChatRole, Profile, TokenUsage,
+};
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use tracing::debug;
@@ -400,6 +402,39 @@ async fn agent_query(
             "no profile is active; select a profile before talking to the assistant",
         ));
     };
+    // Refresh from the profile service so permission changes apply immediately
+    // to local actions without requiring a profile re-activation.
+    let profile = state.profiles.get(profile.id).unwrap_or(profile);
+
+    // Local Spanish command router: time, volume, music, lights/scenes, maths,
+    // identity and small talk are answered without the LLM. Only unmatched
+    // requests fall through to the configured provider.
+    if let Some(local) = crate::assistant::try_local(&state, text, &profile).await {
+        state.voice.begin_query();
+        state.kiosk.set_agent_activity(AgentActivity::Idle);
+        state.kiosk.set_avatar_state(AvatarState::Speaking);
+        if body.speak {
+            state.kiosk.speak(local.reply.clone());
+        }
+        state.kiosk.set_avatar_state(AvatarState::Idle);
+        state.audit(
+            "kiosk",
+            "kiosk.local_command",
+            Some(&profile.id.to_string()),
+            hs_core::models::AuditOutcome::Success,
+            None,
+            Some(serde_json::json!({
+                "intent": local.intent,
+                "denied": local.denied,
+            })),
+        );
+        return Ok(Json(AgentChatResponse {
+            reply: local.reply,
+            model: "local-assistant".to_owned(),
+            tool_trace: Vec::new(),
+            usage: TokenUsage::default(),
+        }));
+    }
 
     state.voice.begin_query();
     state.kiosk.set_avatar_state(AvatarState::Thinking);

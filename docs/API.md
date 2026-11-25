@@ -479,6 +479,24 @@ roles are accepted (other roles or oversized histories return `400`). The helper
 sends the last 24 turns automatically and keeps listening for follow-ups without
 repeating the wake word.
 
+### Local assistant commands (no LLM)
+
+Most everyday Spanish requests are answered by a deterministic router before
+the agent is called. The reply carries `"model":"local-assistant"` and no token
+usage; unmatched questions fall through to the LLM. Covered intents: time, date,
+identity, capabilities, thanks/farewell, jokes, arithmetic, volume, music
+play/pause/status, lights on/off/status and scenes.
+
+Actions require the active profile's tool permissions (`music.set_volume`,
+`music.play`, `music.pause`, `homeassistant.call_service`,
+`homeassistant.list_entities`); when denied the assistant answers locally with a
+permission message. Example:
+
+```json
+{"reply":"Volumen al 70 por ciento.","model":"local-assistant",
+ "tool_trace":[],"usage":{"prompt_tokens":0,"completion_tokens":0}}
+```
+
 ### Voice assistant
 
 | Method | Path | Permission |
@@ -546,6 +564,7 @@ Message types: `metrics` (`overview`), `instance` (`name`,`status`),
 | 502 | Upstream failure (LLM, Home Assistant) |
 | 503 | Provider unavailable (Incus, Home Assistant not configured) |
 | 504 | Runtime operation timeout |
+
 
 
 

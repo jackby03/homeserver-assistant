@@ -10,6 +10,7 @@
 //! integration tests can exercise them without binding sockets.
 
 pub mod adapters;
+pub mod assistant;
 pub mod bootstrap;
 pub mod caddy;
 pub mod config;

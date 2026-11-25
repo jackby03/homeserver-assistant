@@ -34,7 +34,7 @@ infrastructure and ISO pipeline.
 - **Provider diagnostics** — OpenCode Zen Go base/model normalization, required
   `x-opencode-session` routing header and a provider connectivity test endpoint
   with real error details in the portal.
-- **Voice assistant** — always-on local wake word with customizable name,
+- **Local-first assistant router** — deterministic Spanish intents (time, date, arithmetic, volume, music, lights/scenes, identity, help, jokes) answered without LLM/network, with profile tool permissions; unknown questions fall back to the configured LLM.\n- **Voice assistant** — always-on local wake word with customizable name,
   sensitivity and listening window; local STT helper (`voice/wakeword.py`),
   transcript-only wake endpoint, kiosk wake event and portal configuration.
 - **Discovery (`hs-discovery`)** — mDNS, SSDP/UPnP and ARP sources with an
@@ -73,5 +73,6 @@ infrastructure and ISO pipeline.
   documented backups.
 
 [0.1.0]: https://example.invalid/homeserver-assistant/releases/tag/v0.1.0
+
 
 
