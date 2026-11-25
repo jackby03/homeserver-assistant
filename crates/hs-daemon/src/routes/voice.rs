@@ -82,6 +82,7 @@ async fn update_voice(
     );
     // Close any open listening window so the old name cannot be used.
     state.voice.begin_query();
+    state.kiosk.voice_updated(&updated.voice);
     state.kiosk.notify(
         hs_core::events::NotificationLevel::Info,
         format!(
