@@ -25,6 +25,7 @@
 //! ```
 
 pub mod api;
+pub mod assistant;
 pub mod config;
 pub mod dns;
 pub mod error;
@@ -34,6 +35,7 @@ pub mod state;
 pub mod validation;
 pub mod voice;
 
+pub use assistant::{normalize as normalize_utterance, parse_local_intent, LocalIntent};
 pub use dns::{DnsProvider, DnsProviderSpec, DNS_PROVIDERS};
 pub use error::{CoreError, CoreResult};
 pub use state::{ConfigManager, Database, SecretStore, SecretVault};

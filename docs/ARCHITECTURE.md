@@ -102,7 +102,25 @@ Microphone ──> local helper (voice/, local STT) ── transcript only ─�
         └─> tools (permission-checked) ──> Home Assistant / music / runtime
 ```
 
-### 4.3 Voice assistant (always on)
+### 4.3 Local-first assistant routing
+
+Before touching the LLM, `POST /kiosk/agent/query` runs a deterministic Spanish
+intent router (`hs-core::assistant`, executed by `hs-daemon::assistant`):
+
+- **Local answers:** time/date, identity, capabilities/help, thanks/farewell,
+  jokes, safe arithmetic, volume (set/step/mute), music play/pause/status,
+  lights on/off/status and Home Assistant scenes.
+- **No network hop:** these replies return in milliseconds with
+  `model: "local-assistant"`; the assistant keeps working without an LLM or
+  Internet.
+- **Permissions:** state-changing intents check the same profile tool
+  permissions as the agent (`music.set_volume`, `music.play`,
+  `music.pause`, `homeassistant.call_service`, `homeassistant.list_entities`);
+  denied actions answer locally instead of leaking to the LLM.
+- **Fallback:** any unmatched request (weather, general knowledge, complex
+  automation) goes to the configured LLM provider exactly as before.
+
+### 4.4 Voice assistant (always on)
 
 - The configured assistant **name is the wake word** (`VoiceConfig.assistant_name`,
   default `Aura`). Matching is local and transcript based: accents, case and
@@ -225,3 +243,4 @@ Architecture decisions are recorded in [`docs/adr/`](adr/):
 - `0003-tls-termination-at-caddy.md` — Caddy terminates TLS, daemon is loopback.
 - `0004-incus-native-runtime.md` — Incus REST over its Unix socket.
 - `0005-local-wake-word.md` — local wake word + local STT helper.
+
