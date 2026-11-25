@@ -104,7 +104,7 @@ The listener does not wait for fixed 2.4 s windows. It streams 100 ms frames
 with a small pre-roll, detects speech onset by RMS and transcribes as soon as the
 user stops talking (0.45 s of trailing silence). The wake phrase uses beam size 1
 while requests keep beam size 3, so the chime typically arrives ~1 s after
-"Oye Aura" instead of 3-4 s. Tune with `--wake-beam-size`, `--model` and the
+"Hola Aura" instead of 3-4 s. Tune with `--wake-beam-size`, `--model` and the
 device threshold; the log prints both the transcription time and the total flow.
 
 ## Continuous conversation
@@ -184,7 +184,7 @@ python -m venv .demo\voice-venv
   --tts-command "powershell.exe -NoProfile -ExecutionPolicy Bypass -File voice\tts.ps1"
 ```
 
-Say **“Oye Aura”** followed by the request. The reply is printed and spoken with
+Say **“Hola Aura”** followed by the request. The reply is printed and spoken with
 the local Spanish SAPI voice; no audio or text leaves the machine. The portal's
 voice card shows **“Micrófono local conectado”** while the helper heartbeats (it
 sends one every 15 s and the daemon considers it connected for 45 s).
@@ -224,7 +224,7 @@ token). Add the user to a group with read access or pass `--token`.
 
 The wake word is **not** a fixed vendor model: the daemon normalizes the local
 transcript, removes accents/case and matches the configured assistant name with
-a small typo tolerance. Changing the name to `Casa`, `Jarvis` or `Oye Abuela`
+a small typo tolerance. Changing the name to `Casa`, `Jarvis` or `Hola Abuela`
 works immediately for the matcher and the kiosk hint; the STT language is
 configurable (`es`/`en`).
 

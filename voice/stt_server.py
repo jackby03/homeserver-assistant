@@ -102,7 +102,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             text = wakeword.transcribe(
-                MODEL, audio, "es", "Oye Aura. Hola Aura.", beam_size=3
+                MODEL, audio, "es", "Hola Aura.", beam_size=3
             )
         except Exception as error:
             self._json(500, {"error": f"transcription failed: {error}"})

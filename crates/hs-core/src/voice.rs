@@ -7,7 +7,7 @@
 //!
 //! Matching is token based (so `casamiento` does not wake `Casa`), accent and
 //! case insensitive, and tolerant to small typos. When the wake word is
-//! followed by a request in the same sentence (`"oye Casa, enciende la luz"`),
+//! followed by a request in the same sentence (`"hola Casa, enciende la luz"`),
 //! the remaining words are returned as the trailing query.
 
 use crate::config::VoiceConfig;
@@ -21,7 +21,7 @@ pub const MIN_FUZZY_SIMILARITY: f32 = 0.75;
 /// Result of a successful wake-word match.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WakeMatch {
-    /// Normalized name variant that matched (`casa`, `oye casa`).
+    /// Normalized name variant that matched (`casa`, `hola casa`).
     pub phrase: String,
     /// Similarity in `0.0..=1.0` (1.0 for an exact token match).
     pub score: f32,
@@ -129,7 +129,7 @@ impl WakeWordMatcher {
 
 /// Lowercase, strip diacritics and reduce punctuation to single spaces.
 ///
-/// This makes `"¡Oye, Cása!"` and `"oye casa"` equivalent for wake detection.
+/// This makes `"¡Hola, Cása!"` and `"hola casa"` equivalent for wake detection.
 #[must_use]
 pub fn normalize_phrase(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn greetings_case_and_accents_are_ignored() {
         let matcher = matcher("Cása");
-        assert!(matcher.matches("Oye, CASA").is_some());
+        assert!(matcher.matches("Hola, CASA").is_some());
         assert!(matcher.matches("¡Hola Cása!").is_some());
         assert!(matcher.matches("  oye   casa  ").is_some());
     }
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn chained_request_is_returned_as_trailing_query() {
         let matched = matcher("Aura")
-            .matches("Oye Aura enciende la luz del salón")
+            .matches("Hola Aura enciende la luz del salón")
             .expect("wake with request");
         assert_eq!(
             matched.trailing_query.as_deref(),
@@ -247,17 +247,17 @@ mod tests {
     #[test]
     fn small_stt_typos_still_match() {
         let matcher = matcher("Aura");
-        assert!(matcher.matches("oye aura").is_some());
+        assert!(matcher.matches("hola aura").is_some());
         assert!(matcher.matches("oye ara").is_none());
         assert!(matcher.matches("oye auro").is_some());
     }
 
     #[test]
     fn multiword_names_match_contiguously() {
-        let matcher = matcher("Hey Home");
-        let matched = matcher.matches("hey home pon musica").expect("wake");
+        let matcher = matcher("Hi Home");
+        let matched = matcher.matches("hi home pon musica").expect("wake");
         assert_eq!(matched.trailing_query.as_deref(), Some("pon musica"));
-        assert!(matcher.matches("home hey").is_none());
+        assert!(matcher.matches("home hi").is_none());
     }
 
     #[test]
@@ -288,10 +288,11 @@ mod tests {
     #[test]
     fn normalization_is_stable() {
         assert_eq!(
-            normalize_phrase("¡Oye, Cása!  ¿qué tal?"),
-            "oye casa que tal"
+            normalize_phrase("¡Hola, Cása!  ¿qué tal?"),
+            "hola casa que tal"
         );
         assert_eq!(normalize_phrase("AURA"), "aura");
         assert_eq!(normalize_phrase("..."), "");
     }
 }
+

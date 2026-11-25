@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn matching_name_activates_and_opens_window() {
         let (voice, kiosk, _config, _dir) = manager("Aura");
-        let outcome = voice.handle_transcript("oye aura enciende la luz", None);
+        let outcome = voice.handle_transcript("hola aura enciende la luz", None);
         assert!(outcome.activated);
         assert!(outcome.listening);
         assert_eq!(outcome.trailing_query.as_deref(), Some("enciende la luz"));
@@ -298,8 +298,8 @@ mod tests {
     #[test]
     fn cooldown_prevents_double_activation() {
         let (voice, _kiosk, _config, _dir) = manager("Aura");
-        assert!(voice.handle_transcript("oye aura", None).activated);
-        let second = voice.handle_transcript("oye aura", None);
+        assert!(voice.handle_transcript("hola aura", None).activated);
+        let second = voice.handle_transcript("hola aura", None);
         assert!(!second.activated);
         assert_eq!(second.reason, "cooldown");
     }
@@ -313,7 +313,7 @@ mod tests {
                 Ok(())
             })
             .expect("disable wake word");
-        let outcome = voice.handle_transcript("oye aura", None);
+        let outcome = voice.handle_transcript("hola aura", None);
         assert!(!outcome.activated);
         assert_eq!(outcome.reason, "wake_disabled");
     }
@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn begin_query_closes_window() {
         let (voice, _kiosk, _config, _dir) = manager("Aura");
-        assert!(voice.handle_transcript("oye aura", None).activated);
+        assert!(voice.handle_transcript("hola aura", None).activated);
         voice.begin_query();
         assert!(!voice.is_listening());
         assert!(!voice.status().listening);
