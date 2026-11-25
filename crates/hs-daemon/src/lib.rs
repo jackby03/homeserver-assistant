@@ -27,6 +27,7 @@ pub mod setup;
 pub mod state;
 pub mod static_files;
 pub mod tasks;
+pub mod timers;
 pub mod vision_bridge;
 pub mod voice;
 pub mod weather;

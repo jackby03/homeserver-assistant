@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(adult.role, ProfileRole::Adult);
         assert_eq!(child.role, ProfileRole::Child);
         assert_eq!(guest.role, ProfileRole::Guest);
-        assert_eq!(owner.allowed_tools.len(), 13);
+        assert_eq!(owner.allowed_tools.len(), 16);
         assert!(owner.may_use_tool("system.status"));
         assert!(owner.may_use_tool("runtime.stop_instance"));
         assert!(!adult.may_use_tool("runtime.stop_instance"));
