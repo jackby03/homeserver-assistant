@@ -1,6 +1,7 @@
 import { http } from './client';import type {
   AgentChatResponse,
   KioskStateResponse,
+  KioskWeather,
   KioskWakeOutcome,
   MusicState,
 } from './types';
@@ -48,6 +49,12 @@ export const kioskApi = {
 
   setListening: (active: boolean): Promise<void> =>
     http.post<void>('/kiosk/listening', { active }, { headers: authHeaders() }),
+
+  weather: (city = 'Lima'): Promise<KioskWeather> =>
+    http.get<KioskWeather>(
+      `/kiosk/weather?city=${encodeURIComponent(city)}`,
+      { headers: authHeaders() },
+    ),
 
   wake: (transcript: string): Promise<KioskWakeOutcome> =>
     http.post<KioskWakeOutcome>(

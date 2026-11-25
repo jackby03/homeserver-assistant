@@ -28,6 +28,7 @@ pub mod static_files;
 pub mod tasks;
 pub mod vision_bridge;
 pub mod voice;
+pub mod weather;
 
 pub use config::DaemonConfig;
 pub use error::{HttpError, HttpResult};

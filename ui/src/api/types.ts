@@ -812,6 +812,16 @@ export interface KioskWakeOutcome {
   reason: string;
 }
 
+export interface KioskWeather {
+  city: string;
+  temperature_c: number;
+  apparent_c: number;
+  humidity: number;
+  precipitation_mm: number;
+  weather_code: number;
+  description: string;
+}
+
 export interface KioskStateResponse {
   device_name: string;
   profile: Profile | null;

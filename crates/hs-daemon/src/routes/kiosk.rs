@@ -6,7 +6,7 @@
 //! the Vite development server). The API only exposes kiosk-safe operations.
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
@@ -152,6 +152,7 @@ pub struct RecognizeBody {
 pub fn router(state: SharedState) -> Router {
     let api = Router::new()
         .route("/kiosk/state", get(state_snapshot))
+        .route("/kiosk/weather", get(weather_current))
         .route("/kiosk/profile/activate", post(activate_profile))
         .route("/kiosk/listening", post(listening))
         .route("/kiosk/agent/query", post(agent_query))
@@ -284,6 +285,22 @@ async fn build_scene_list(state: &SharedState) -> Vec<SceneSummary> {
             Vec::new()
         }
     }
+}
+
+/// `GET /api/v1/kiosk/weather?city=Lima`
+#[derive(Debug, serde::Deserialize)]
+struct WeatherQuery {
+    /// City to resolve, defaulting to Lima.
+    city: Option<String>,
+}
+
+async fn weather_current(
+    Query(query): Query<WeatherQuery>,
+) -> HttpResult<Json<crate::weather::WeatherSnapshot>> {
+    crate::weather::current(query.city.as_deref())
+        .await
+        .map(Json)
+        .map_err(HttpError::unavailable)
 }
 
 async fn state_snapshot(State(state): State<SharedState>) -> Json<KioskStateResponse> {
