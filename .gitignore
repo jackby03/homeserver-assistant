@@ -61,3 +61,6 @@ iso/output/
 # Python
 __pycache__/
 *.pyc
+
+# Piper temporary audio
+hs-piper-*/
