@@ -177,24 +177,32 @@ def record_until_silence(
     threshold: float,
     device: str | int | None,
 ) -> np.ndarray:
-    """Record the user's request, stopping after `silence_seconds` of quiet."""
+    """Record the user's request, stopping after `silence_seconds` of quiet.
+
+    Uses short blocking ``sd.rec`` windows instead of ``InputStream.read`` so it
+    also works on WDM-KS devices, which reject the blocking read API on Windows.
+    """
     chunk = 0.1
     blocks: list[np.ndarray] = []
     silent_for = 0.0
     deadline = time.monotonic() + max_seconds
-    with sd.InputStream(
-        samplerate=SAMPLE_RATE, channels=1, dtype="float32", device=device
-    ) as stream:
-        while time.monotonic() < deadline:
-            block, _overflow = stream.read(int(chunk * SAMPLE_RATE))
-            mono = block.flatten()
-            blocks.append(mono.copy())
-            if rms(mono) < threshold:
-                silent_for += chunk
-                if silent_for >= silence_seconds and len(blocks) > 10:
-                    break
-            else:
-                silent_for = 0.0
+    while time.monotonic() < deadline:
+        block = sd.rec(
+            int(chunk * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype="float32",
+            device=device,
+        )
+        sd.wait()
+        mono = block.flatten()
+        blocks.append(mono.copy())
+        if rms(mono) < threshold:
+            silent_for += chunk
+            if silent_for >= silence_seconds and len(blocks) > 10:
+                break
+        else:
+            silent_for = 0.0
     return np.concatenate(blocks) if blocks else np.zeros(0, dtype="float32")
 
 
@@ -380,6 +388,11 @@ def main() -> int:
         elapsed = time.monotonic() - started
         if transcript:
             print(f"[wakeword] heard ({elapsed:.2f}s): {transcript}")
+        else:
+            if args.once:
+                print("[wakeword] no speech detected")
+                return 0
+            continue
         try:
             outcome = post_json(
                 f"{args.url}/api/v1/kiosk/wake",
@@ -403,9 +416,17 @@ def main() -> int:
         trailing = (outcome.get("trailing_query") or "").strip()
         query = trailing
         if not query:
-            request_audio = record_until_silence(
-                QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
-            )
+            try:
+                request_audio = record_until_silence(
+                    QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
+                )
+            except Exception as error:  # device/driver hiccup: fixed fallback
+                print(
+                    f"[wakeword] request recording failed ({error}); "
+                    "recording a fixed window instead",
+                    file=sys.stderr,
+                )
+                request_audio = record_window(5.0, device)
             query = transcribe(model, request_audio, args.language, beam_size=args.beam_size)
         if not query:
             print("[wakeword] no request after the wake word")
