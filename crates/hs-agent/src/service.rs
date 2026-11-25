@@ -72,14 +72,54 @@ fn default_enabled() -> bool {
     true
 }
 
+/// Tools whose effects are hard to undo require an explicit user confirmation.
+fn requires_confirmation(tool: &str) -> bool {
+    matches!(
+        tool,
+        "runtime.stop_instance" | "runtime.delete_instance" | "app.delete"
+    )
+}
+
+/// Whether the latest user message clearly confirms a pending action.
+fn user_confirmed_destructive_action(messages: &[ChatMessage]) -> bool {
+    let Some(message) = messages
+        .iter()
+        .rev()
+        .find(|message| message.role == ChatRole::User)
+    else {
+        return false;
+    };
+    let text = message
+        .content
+        .to_lowercase()
+        .replace('á', "a")
+        .replace('é', "e")
+        .replace('í', "i")
+        .replace('ó', "o")
+        .replace('ú', "u");
+    [
+        "confirmo",
+        "confirmado",
+        "si, hazlo",
+        "si hazlo",
+        "adelante",
+        "hazlo",
+        "de acuerdo",
+        "yes, do it",
+        "go ahead",
+        "confirmed",
+    ]
+    .iter()
+    .any(|phrase| text.contains(phrase))
+}
+
 /// Stable per-conversation id for providers with session-affinity requirements.
 ///
 /// The chat API is stateless, so the id is derived from the profile id and the
 /// first user message (the frontend resends history each turn). This keeps every
 /// turn of the same conversation on the same gateway route without persisting
 /// conversations server-side.
-fn conversation_session_id(profile_id: Uuid, messages: &[ChatMessage]) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis.
+fn conversation_session_id(profile_id: Uuid, messages: &[ChatMessage]) -> String {    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis.
     for byte in profile_id.as_bytes().iter().chain(
         messages
             .iter()
@@ -450,8 +490,9 @@ impl AgentService {
                 tool_calls: tool_calls.clone(),
                 tool_call_id: None,
             });
+            let confirmed = user_confirmed_destructive_action(&messages);
             for call in tool_calls {
-                self.run_tool_call(&profile, &mut messages, &mut tool_trace, call)
+                self.run_tool_call(&profile, &mut messages, &mut tool_trace, call, confirmed)
                     .await;
             }
         }
@@ -463,7 +504,39 @@ impl AgentService {
         messages: &mut Vec<ChatMessage>,
         trace: &mut Vec<ToolTraceEntry>,
         call: ToolCall,
+        confirmed: bool,
     ) {
+        if requires_confirmation(&call.name) && !confirmed {
+            let message = format!(
+                "confirmation required before using `{}`; ask the user explicitly and wait for a clear yes",
+                call.name
+            );
+            tracing::info!(
+                profile_id = %profile.id,
+                tool = %call.name,
+                "destructive tool call blocked pending confirmation"
+            );
+            trace.push(ToolTraceEntry {
+                tool: call.name.clone(),
+                arguments: call.arguments,
+                allowed: true,
+                output: None,
+                error: Some(message.clone()),
+                duration_ms: 0,
+            });
+            messages.push(ChatMessage {
+                role: ChatRole::Tool,
+                content: serde_json::json!({
+                    "error": "confirmation_required",
+                    "tool": call.name,
+                    "message": message,
+                })
+                .to_string(),
+                tool_calls: Vec::new(),
+                tool_call_id: Some(call.id),
+            });
+            return;
+        }
         match self
             .tools
             .invoke(profile, &call.name, call.arguments.clone())
@@ -926,6 +999,62 @@ mod tests {
             requests[1].messages[2].tool_call_id.as_deref(),
             Some("call_1")
         );
+    }
+
+    #[tokio::test]
+    async fn destructive_tools_require_explicit_confirmation() {
+        let env = env(
+            vec![
+                ScriptStep::Reply(tool_reply(
+                    "call_1",
+                    "runtime.stop_instance",
+                    json!({"name": "home-assistant"}),
+                    1,
+                    1,
+                )),
+                ScriptStep::Reply(text_reply("¿Confirmas que detenga el contenedor?", 1, 1)),
+            ],
+            4,
+        );
+        let profile = env.create_profile("Mamá", &["runtime.stop_instance"]);
+        env.create_provider("DeepSeek", Some("sk-test-secret"));
+        let response = env
+            .service
+            .chat(user_request(profile.id, "detén home-assistant"))
+            .await
+            .expect("chat should succeed");
+        assert_eq!(response.tool_trace.len(), 1);
+        assert!(response
+            .tool_trace[0]
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("confirmation required")));
+    }
+
+    #[tokio::test]
+    async fn explicit_confirmation_allows_destructive_tools() {
+        let env = env(
+            vec![
+                ScriptStep::Reply(tool_reply(
+                    "call_1",
+                    "runtime.stop_instance",
+                    json!({"name": "home-assistant"}),
+                    1,
+                    1,
+                )),
+                ScriptStep::Reply(text_reply("Contenedor detenido.", 1, 1)),
+            ],
+            4,
+        );
+        let profile = env.create_profile("Mamá", &["runtime.stop_instance"]);
+        env.create_provider("DeepSeek", Some("sk-test-secret"));
+        let response = env
+            .service
+            .chat(user_request(profile.id, "sí, hazlo: detén home-assistant"))
+            .await
+            .expect("chat should succeed");
+        assert_eq!(response.tool_trace.len(), 1);
+        assert!(response.tool_trace[0].error.is_none());
     }
 
     #[tokio::test]
