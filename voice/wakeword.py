@@ -415,7 +415,7 @@ def record_utterance(
                 for offset in (0, 512, 1024)
             ]
             probability = max(probabilities)
-        energy_gate = max(threshold * 3.0, 0.006)
+        energy_gate = max(0.005, min(threshold * 1.5, 0.012))
         is_speech = (probability is not None and probability >= 0.5) or (
             level >= energy_gate
         )
@@ -819,7 +819,7 @@ def main() -> int:
             device, _level = choice
     if args.threshold is None:
         floor = measure_noise_floor(device)
-        args.threshold = max(0.0013, min(floor * 4.0, 0.01)) if floor else DEFAULT_THRESHOLD
+        args.threshold = max(0.0015, min(floor * 2.5, 0.008)) if floor else DEFAULT_THRESHOLD
     if args.calibrate:
         level = rms(record_window(3.0, device))
         print(f"[wakeword] microphone RMS over 3 s: {level:.6f}")
@@ -1054,6 +1054,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
