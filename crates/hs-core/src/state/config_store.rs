@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use crate::config::{SystemConfig, CONFIG_SCHEMA_VERSION};
+use crate::config::{DnsProtocol, SystemConfig, CONFIG_SCHEMA_VERSION};
 use crate::error::{CoreError, CoreResult};
 use crate::state::fsutil;
 
@@ -46,6 +46,22 @@ impl ConfigManager {
             )));
         }
         config.schema_version = CONFIG_SCHEMA_VERSION;
+
+        // Security migration: an old configuration may have selected plain DNS
+        // for a provider that also offers encryption. The appliance always
+        // prioritizes encrypted transports, so upgrade it once and persist.
+        let mut migrated = false;
+        if config.network.dns.protocol == DnsProtocol::Plain {
+            if let Some(preferred) = config.network.dns.provider.preferred_encrypted_protocol() {
+                tracing::warn!(
+                    provider = %config.network.dns.provider,
+                    upgrade = %preferred.id(),
+                    "migrating legacy plain DNS configuration to encrypted DNS"
+                );
+                config.network.dns.protocol = preferred;
+                migrated = true;
+            }
+        }
         config.validate()?;
 
         let manager = Self {
@@ -53,7 +69,7 @@ impl ConfigManager {
             config: RwLock::new(config),
         };
 
-        if !manager.path.exists() {
+        if migrated || !manager.path.exists() {
             manager.persist(&manager.snapshot())?;
         }
         Ok(manager)
@@ -186,5 +202,22 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, CoreError::Config(_)));
         assert_eq!(manager.snapshot().device.name, "HomeServer Assistant");
+    }
+
+    #[test]
+    fn legacy_plain_dns_is_migrated_to_encryption_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = SystemConfig::bootstrap();
+        config.network.dns.provider = DnsProvider::cloudflare_family();
+        config.network.dns.protocol = DnsProtocol::Plain;
+        let path = dir.path().join(CONFIG_FILE);
+        std::fs::write(&path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+
+        let manager = ConfigManager::load(dir.path()).expect("migrated config loads");
+        assert_eq!(manager.snapshot().network.dns.protocol, DnsProtocol::Doh);
+        let persisted: SystemConfig =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted.network.dns.protocol, DnsProtocol::Doh);
+        assert!(persisted.network.dns.protocol.is_encrypted());
     }
 }

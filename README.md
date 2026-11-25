@@ -50,7 +50,7 @@ visión 100 % local.
 - **Home Assistant + IoT**: aprovisionamiento, estado, entidades, escenas y
   adopción de dispositivos descubiertos por mDNS/SSDP/ARP.
 - **Red y seguridad**: IP estática/DHCP, **catálogo de 40 variantes DNS gratuitas**
-  (Cloudflare, Google, AdGuard, Quad9, CleanBrowsing, OpenDNS, NextDNS, Comodo,
+  (default **Cloudflare Family**; Cloudflare, Google, AdGuard, Quad9, CleanBrowsing, OpenDNS, NextDNS, Comodo,
   Control D con 13 listas comunitarias, DNS.WATCH o custom) con IPv4/IPv6,
   **DoH/DoT** (y DNS sin cifrar solo para proveedores heredados), listas de
   bloqueo, subred DMZ con `nftables` (aislada de la LAN y del puerto de
@@ -213,7 +213,7 @@ Resultados de la última ejecución en el entorno de desarrollo (Windows):
 
 | Comprobación | Resultado |
 |---|---|
-| `cargo test --workspace --offline --lib --tests` | **430 tests, 0 fallos** (17 binarios de test) |
+| `cargo test --workspace --offline --lib --tests` | **434 tests, 0 fallos** (17 binarios de test) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | limpio |
 | `cargo fmt --all -- --check` | limpio |
 | `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 20 tests / `ui/dist` 0,91 MB |
@@ -327,4 +327,6 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
+
 

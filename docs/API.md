@@ -283,9 +283,15 @@ Body is `DnsConfig`:
 {"enabled":true,"engine":"adguard_home","provider":"quad9","protocol":"dot",
  "custom_upstream":null,"blocklists":["https://…"]}
 ```
-Providers: any catalog id. Protocols: `doh`, `dot`, `plain` (only when the
-provider supports it; unsupported combinations return `400`). `custom_upstream`
-is required for `custom` and `nextdns`.
+Providers: any catalog id. Protocols: `doh`, `dot`, `plain`.
+
+**Encryption is always prioritized:** new installations default to
+**Cloudflare Family over DoH** (malware + adult-content filtering), the UI only
+offers encrypted transports when the provider supports them, and `plain` is
+accepted only for legacy providers without DoH/DoT (currently Comodo Secure).
+Existing configurations that selected plain DNS for an encrypted-capable
+provider are migrated to DoH automatically on startup. `custom_upstream` is
+required for `custom` and `nextdns`.
 
 `PUT /network/dmz` body is `DmzConfig`
 `{enabled,bridge,subnet,gateway,allow_dns}` with subnet validation and gateway
@@ -505,3 +511,4 @@ Message types: `metrics` (`overview`), `instance` (`name`,`status`),
 | 502 | Upstream failure (LLM, Home Assistant) |
 | 503 | Provider unavailable (Incus, Home Assistant not configured) |
 | 504 | Runtime operation timeout |
+

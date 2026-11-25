@@ -70,14 +70,18 @@ const FALLBACK_CATALOG: DnsProviderInfo[] = [
   },
 ];
 
+/**
+ * Transports offered for a provider. Encryption always wins: plain DNS is only
+ * offered for legacy providers that have neither DoH nor DoT.
+ */
 function supportedProtocols(provider: DnsProviderInfo | undefined): DnsProtocol[] {
   if (provider === undefined) return ['doh'];
   if (provider.id === 'custom') return ['doh', 'dot'];
-  const protocols: DnsProtocol[] = [];
-  if (provider.doh !== null) protocols.push('doh');
-  if (provider.dot !== null) protocols.push('dot');
-  if (provider.plain) protocols.push('plain');
-  return protocols;
+  const encrypted: DnsProtocol[] = [];
+  if (provider.doh !== null) encrypted.push('doh');
+  if (provider.dot !== null) encrypted.push('dot');
+  if (encrypted.length > 0) return encrypted;
+  return provider.plain ? ['plain'] : [];
 }
 
 /**
@@ -256,7 +260,11 @@ export function DnsProviderPicker({
         <p className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-amber-200">
           {t('net.dns.plainWarning')}
         </p>
-      ) : null}
+      ) : (
+        <p className="flex items-center gap-1.5 text-[10.5px] text-mint-300/80">
+          <ShieldCheck size={12} /> {t('net.dns.encryptedPreferred')}
+        </p>
+      )}
 
       {needsEndpoint ? (
         <Field

@@ -71,6 +71,12 @@ pub fn upstreams(config: &DnsConfig) -> NetworkResult<Vec<DnsUpstream>> {
     let provider = config.provider.clone();
 
     if provider.is_custom() {
+        if config.protocol == DnsProtocol::Plain {
+            return Err(NetworkError::Invalid(
+                "custom DNS requires DoH or DoT; encrypted transports are always preferred"
+                    .to_owned(),
+            ));
+        }
         let custom = config.custom_upstream.as_deref().ok_or_else(|| {
             NetworkError::Invalid(
                 "custom DNS provider requires `custom_upstream` to be set".to_owned(),
@@ -146,6 +152,12 @@ pub fn upstreams(config: &DnsConfig) -> NetworkResult<Vec<DnsUpstream>> {
             }])
         }
         DnsProtocol::Plain => {
+            if spec.doh.is_some() || spec.dot.is_some() {
+                return Err(NetworkError::Invalid(format!(
+                    "provider `{}` offers encrypted DNS; plain DNS is only available for legacy providers without DoH/DoT",
+                    spec.label
+                )));
+            }
             if !spec.plain {
                 return Err(NetworkError::Invalid(format!(
                     "provider `{}` does not offer plain DNS; choose DoH or DoT",
@@ -590,6 +602,21 @@ mod tests {
     }
 
     #[test]
+    fn plain_dns_is_refused_for_providers_with_encryption() {
+        let config = config_with("cloudflare_family", DnsProtocol::Plain);
+        assert!(
+            upstreams(&config).is_err(),
+            "encrypted providers must never be configured as plain DNS"
+        );
+        let custom = custom_config(DnsProtocol::Plain, "192.0.2.53");
+        // The custom provider must never silently downgrade to plain DNS.
+        assert!(
+            upstreams(&custom).is_err(),
+            "custom plain DNS is refused; use DoH/DoT"
+        );
+    }
+
+    #[test]
     fn custom_provider_validates_each_transport() {
         let doh = custom_config(DnsProtocol::Doh, "https://dns.example.com/dns-query");
         assert!(upstreams(&doh).is_ok());
@@ -601,9 +628,9 @@ mod tests {
             "dns.example.com:853"
         );
         let plain = custom_config(DnsProtocol::Plain, "192.0.2.53");
-        assert_eq!(
-            upstreams(&plain).expect("plain")[0].as_engine_upstream(),
-            "192.0.2.53"
+        assert!(
+            upstreams(&plain).is_err(),
+            "custom DNS must stay encrypted (DoH/DoT)"
         );
         let bad_plain = custom_config(DnsProtocol::Plain, "not-an-ip");
         assert!(upstreams(&bad_plain).is_err());

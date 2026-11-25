@@ -70,3 +70,4 @@ infrastructure and ISO pipeline.
   documented backups.
 
 [0.1.0]: https://example.invalid/homeserver-assistant/releases/tag/v0.1.0
+
