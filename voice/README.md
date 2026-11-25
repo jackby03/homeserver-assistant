@@ -61,6 +61,36 @@ python3 voice/wakeword.py --tts-command "piper --model /opt/piper/es_ES-sharvard
 The helper prints the local transcripts and the assistant replies to the
 console in English.
 
+## Windows development demo (local microphone)
+
+On a Windows development machine the same helper runs against the dev daemon:
+
+```powershell
+python -m venv .demo\voice-venv
+.\.demo\voice-venv\Scripts\pip install -r voice\requirements.txt
+
+# List capture devices and pick one with "Microphone" / "Headset"
+.\.demo\voice-venv\Scripts\python -c "import sounddevice as sd; print(sd.query_devices())"
+
+.\.demo\voice-venv\Scripts\python voice\wakeword.py `
+  --url http://127.0.0.1:3000 `
+  --config .demo\data\config.json `
+  --language es `
+  --tts-command "powershell.exe -NoProfile -ExecutionPolicy Bypass -File voice\tts.ps1"
+```
+
+Say **“Oye Aura”** followed by the request. The reply is printed and spoken with
+the local Spanish SAPI voice; no audio or text leaves the machine. The portal's
+voice card shows **“Micrófono local conectado”** while the helper heartbeats (it
+sends one every 15 s and the daemon considers it connected for 45 s).
+
+If Windows has a system proxy configured (WinINET), pip may fail with
+`ProxyError ... 127.0.0.1:8000`. Bypass it for the install only:
+
+```powershell
+$env:NO_PROXY='*'; .\.demo\voice-venv\Scripts\pip install --proxy "" -r voice\requirements.txt
+```
+
 ## Systemd unit (appliance)
 
 ```ini
