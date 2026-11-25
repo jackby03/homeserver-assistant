@@ -758,6 +758,7 @@ mod tests {
                 calls: system_calls,
             }),
             webhooks: Arc::new(UnusedWebhooks),
+            memory: Arc::new(hs_tools::EphemeralMemoryStore::default()),
         })
     }
 

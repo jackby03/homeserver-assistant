@@ -19,6 +19,7 @@ pub mod dto;
 pub mod error;
 pub mod events;
 pub mod kiosk;
+pub mod memory;
 pub mod middleware;
 pub mod router;
 pub mod routes;

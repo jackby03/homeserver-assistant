@@ -19,6 +19,9 @@ const OWNER_TOOLS: &[&str] = &[
     "music.pause",
     "music.set_volume",
     "http.webhook",
+    "memory.remember",
+    "memory.recall",
+    "memory.forget",
 ];
 
 /// Adults may do everything except stop running workloads.
@@ -32,6 +35,9 @@ const ADULT_TOOLS: &[&str] = &[
     "music.pause",
     "music.set_volume",
     "http.webhook",
+    "memory.remember",
+    "memory.recall",
+    "memory.forget",
 ];
 
 /// Children get read-only status plus media control.

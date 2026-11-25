@@ -36,6 +36,20 @@ pub trait Tool: Send + Sync {
     /// Returns [`ToolError`] when the arguments are invalid or the adapter
     /// fails.
     async fn execute(&self, ports: &ToolPorts, arguments: Value) -> ToolResult<Value>;
+
+    /// Execute with the active profile. Most tools ignore it; profile-aware
+    /// tools such as memory override this hook instead of `execute`.
+    ///
+    /// # Errors
+    /// Returns [`ToolError`] under the same conditions as [`Tool::execute`].
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        _profile: &Profile,
+    ) -> ToolResult<Value> {
+        self.execute(ports, arguments).await
+    }
 }
 
 /// Serialized description of a tool, used to build LLM tool specifications.
@@ -188,7 +202,7 @@ impl ToolRegistry {
         let ports = self.active_ports()?;
 
         let started = Instant::now();
-        let output = entry.execute(&ports, args).await?;
+        let output = entry.execute_for_profile(&ports, args, profile).await?;
         let elapsed = started.elapsed().as_millis();
         let duration_ms = u64::try_from(elapsed).unwrap_or(u64::MAX);
         Ok(ToolOutcome {
@@ -220,11 +234,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn builtin_registry_exposes_the_ten_tools() {
+    async fn builtin_registry_exposes_all_tools() {
         let (ports, _counts, _webhook_payload) = fake_ports();
         let registry = ToolRegistry::builtin(ports);
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 10);
+        assert_eq!(descriptors.len(), 13);
         assert!(registry.get("system.status").is_some());
         assert!(registry.get("music.play").is_some());
         assert!(registry.get("does.not.exist").is_none());

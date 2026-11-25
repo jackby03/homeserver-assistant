@@ -178,6 +178,7 @@ pub fn build_ports(
     runtime: Arc<dyn RuntimeProvider>,
     system: Arc<SystemService>,
     ha: Arc<HaService>,
+    data_dir: &std::path::Path,
 ) -> ToolPorts {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -193,5 +194,6 @@ pub fn build_ports(
         }),
         system: Arc::new(SystemAdapter { system }),
         webhooks: Arc::new(WebhookAdapter { http }),
+        memory: Arc::new(crate::memory::FileMemoryStore::new(data_dir.join("memory"))),
     }
 }

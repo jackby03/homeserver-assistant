@@ -111,6 +111,111 @@ pub trait WebhookClient: Send + Sync {
     async fn post(&self, url: &str, payload: serde_json::Value) -> Result<u16, String>;
 }
 
+/// One stored household memory item.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryEntry {
+    /// Stable key chosen by the model (e.g. `cumpleanos_mama`).
+    pub key: String,
+    /// Value to remember.
+    pub value: String,
+}
+
+/// Persistent per-profile memory used by the assistant.
+#[async_trait]
+pub trait MemoryStore: Send + Sync {
+    /// Create or replace `key` for `profile_id`.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when persistence fails.
+    async fn remember(
+        &self,
+        profile_id: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<MemoryEntry, String>;
+
+    /// List memories, optionally filtered by a case-insensitive substring.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when persistence fails.
+    async fn recall(
+        &self,
+        profile_id: &str,
+        query: Option<&str>,
+    ) -> Result<Vec<MemoryEntry>, String>;
+
+    /// Remove a memory. Returns `true` when it existed.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when persistence fails.
+    async fn forget(&self, profile_id: &str, key: &str) -> Result<bool, String>;
+}
+
+/// Small in-memory [`MemoryStore`] used by tests and ephemeral runs.
+#[derive(Debug, Default)]
+pub struct EphemeralMemoryStore {
+    entries: std::sync::Mutex<Vec<(String, MemoryEntry)>>,
+}
+
+#[async_trait]
+impl MemoryStore for EphemeralMemoryStore {
+    async fn remember(
+        &self,
+        profile_id: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<MemoryEntry, String> {
+        let entry = MemoryEntry {
+            key: key.to_owned(),
+            value: value.to_owned(),
+        };
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| "memory lock poisoned".to_owned())?;
+        let scope = format!("{profile_id}:{key}");
+        entries.retain(|(stored, _)| stored != &scope);
+        entries.push((scope, entry.clone()));
+        Ok(entry)
+    }
+
+    async fn recall(
+        &self,
+        profile_id: &str,
+        query: Option<&str>,
+    ) -> Result<Vec<MemoryEntry>, String> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| "memory lock poisoned".to_owned())?;
+        let prefix = format!("{profile_id}:");
+        let needle = query.map(str::to_lowercase);
+        Ok(entries
+            .iter()
+            .filter(|(scope, _)| scope.starts_with(&prefix))
+            .map(|(_, entry)| entry)
+            .filter(|entry| {
+                needle.as_ref().is_none_or(|needle| {
+                    needle.is_empty()
+                        || entry.key.to_lowercase().contains(needle)
+                        || entry.value.to_lowercase().contains(needle)
+                })
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn forget(&self, profile_id: &str, key: &str) -> Result<bool, String> {
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| "memory lock poisoned".to_owned())?;
+        let scope = format!("{profile_id}:{key}");
+        let before = entries.len();
+        entries.retain(|(stored, _)| stored != &scope);
+        Ok(entries.len() != before)
+    }
+}
 /// Bundle of outbound adapters required to execute tools.
 ///
 /// Cloning is cheap: every field is an `Arc`.
@@ -126,6 +231,8 @@ pub struct ToolPorts {
     pub system: Arc<dyn SystemControl>,
     /// Outbound webhook adapter.
     pub webhooks: Arc<dyn WebhookClient>,
+    /// Per-profile assistant memory.
+    pub memory: Arc<dyn MemoryStore>,
 }
 
 impl std::fmt::Debug for ToolPorts {

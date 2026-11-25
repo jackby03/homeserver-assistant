@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use hs_core::models::Profile;
 use serde_json::{json, Value};
 
 use crate::args;
@@ -359,6 +360,174 @@ impl Tool for HttpWebhook {
     }
 }
 
+fn memory_key(map: &serde_json::Map<String, Value>) -> ToolResult<String> {
+    let key = args::required_string(map, "key")?;
+    let key = key.trim();
+    if key.is_empty() || key.len() > 64 {
+        return Err(ToolError::InvalidArguments(
+            "key must be between 1 and 64 characters".to_owned(),
+        ));
+    }
+    Ok(key.to_owned())
+}
+
+struct MemoryRemember;
+
+#[async_trait]
+impl Tool for MemoryRemember {
+    fn name(&self) -> &'static str {
+        "memory.remember"
+    }
+
+    fn description(&self) -> &'static str {
+        "Remember a durable fact or preference for this household profile (e.g. a birthday, a favourite drink, an access preference)."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "Short stable key, e.g. cumpleanos_mama."
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The fact to remember."
+                }
+            },
+            "required": ["key", "value"],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, _ports: &ToolPorts, _arguments: Value) -> ToolResult<Value> {
+        Err(ToolError::InvalidArguments(
+            "memory tools require the active profile".to_owned(),
+        ))
+    }
+
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        profile: &Profile,
+    ) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let key = memory_key(&map)?;
+        let value = args::required_string(&map, "value")?;
+        let value = value.trim();
+        if value.is_empty() || value.chars().count() > 2_000 {
+            return Err(ToolError::InvalidArguments(
+                "value must be between 1 and 2000 characters".to_owned(),
+            ));
+        }
+        let entry = ports
+            .memory
+            .remember(&profile.id.to_string(), &key, value)
+            .await
+            .map_err(ToolError::Upstream)?;
+        Ok(json!({ "status": "remembered", "key": entry.key, "value": entry.value }))
+    }
+}
+
+struct MemoryRecall;
+
+#[async_trait]
+impl Tool for MemoryRecall {
+    fn name(&self) -> &'static str {
+        "memory.recall"
+    }
+
+    fn description(&self) -> &'static str {
+        "Recall durable facts and preferences stored for this household profile, optionally filtered by a search term."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional case-insensitive search term."
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, _ports: &ToolPorts, _arguments: Value) -> ToolResult<Value> {
+        Err(ToolError::InvalidArguments(
+            "memory tools require the active profile".to_owned(),
+        ))
+    }
+
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        profile: &Profile,
+    ) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let query =
+            args::optional_value(&map, "query").and_then(|value| value.as_str().map(str::to_owned));
+        let entries = ports
+            .memory
+            .recall(&profile.id.to_string(), query.as_deref())
+            .await
+            .map_err(ToolError::Upstream)?;
+        let count = entries.len();
+        Ok(json!({ "memories": entries, "count": count }))
+    }
+}
+
+struct MemoryForget;
+
+#[async_trait]
+impl Tool for MemoryForget {
+    fn name(&self) -> &'static str {
+        "memory.forget"
+    }
+
+    fn description(&self) -> &'static str {
+        "Delete a stored memory by its key."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "key": { "type": "string", "description": "Memory key to delete." }
+            },
+            "required": ["key"],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, _ports: &ToolPorts, _arguments: Value) -> ToolResult<Value> {
+        Err(ToolError::InvalidArguments(
+            "memory tools require the active profile".to_owned(),
+        ))
+    }
+
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        profile: &Profile,
+    ) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let key = memory_key(&map)?;
+        let forgotten = ports
+            .memory
+            .forget(&profile.id.to_string(), &key)
+            .await
+            .map_err(ToolError::Upstream)?;
+        Ok(json!({ "forgotten": forgotten, "key": key }))
+    }
+}
+
 /// Instantiate every built-in tool.
 pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
     vec![
@@ -372,6 +541,9 @@ pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(MusicPause),
         Arc::new(MusicSetVolume),
         Arc::new(HttpWebhook),
+        Arc::new(MemoryRemember),
+        Arc::new(MemoryRecall),
+        Arc::new(MemoryForget),
     ]
 }
 
@@ -398,6 +570,9 @@ mod tests {
             "music.pause".to_owned(),
             "music.set_volume".to_owned(),
             "http.webhook".to_owned(),
+            "memory.remember".to_owned(),
+            "memory.recall".to_owned(),
+            "memory.forget".to_owned(),
         ]
     }
 
@@ -405,7 +580,7 @@ mod tests {
     async fn every_builtin_tool_has_a_schema() {
         let (registry, _counts) = registry();
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 10);
+        assert_eq!(descriptors.len(), 13);
         let names: Vec<String> = descriptors.iter().map(|tool| tool.name.clone()).collect();
         let mut expected = all_tools();
         expected.sort();
@@ -414,6 +589,36 @@ mod tests {
             assert!(!descriptor.description.is_empty());
             assert_eq!(descriptor.parameters["type"], "object");
         }
+    }
+
+    #[tokio::test]
+    async fn memory_tools_are_profile_scoped() {
+        let (registry, _counts) = registry();
+        let profile = profile_with_tools(&["memory.remember", "memory.recall", "memory.forget"]);
+        registry
+            .invoke(
+                &profile,
+                "memory.remember",
+                json!({"key": "cafe", "value": "sin azúcar"}),
+            )
+            .await
+            .expect("remember");
+        let recalled = registry
+            .invoke(&profile, "memory.recall", json!({"query": "cafe"}))
+            .await
+            .expect("recall");
+        assert_eq!(recalled.output["count"], 1);
+        assert_eq!(recalled.output["memories"][0]["value"], "sin azúcar");
+        let forgotten = registry
+            .invoke(&profile, "memory.forget", json!({"key": "cafe"}))
+            .await
+            .expect("forget");
+        assert_eq!(forgotten.output["forgotten"], true);
+        let empty = registry
+            .invoke(&profile, "memory.recall", json!({}))
+            .await
+            .expect("recall");
+        assert_eq!(empty.output["count"], 0);
     }
 
     #[tokio::test]
