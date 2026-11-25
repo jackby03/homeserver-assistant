@@ -452,6 +452,7 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 {"type":"tracking","point":{"x":0.42,"y":0.55,"confidence":0.87}}
 {"type":"profile_activated","profile":{…}}
 {"type":"wake","assistant_name":"Aura","trailing_query":"enciende la luz"}
+{"type":"speech","text":"Vale, enciendo la luz del salón."}
 {"type":"music","state":{"playing":true,"track":"…","artist":"…","volume":60,"sink":"…"}}
 {"type":"agent","activity":"thinking"}
 {"type":"network","status":{"online":true,"dns_ok":true,"latency_ms":12}}
@@ -460,6 +461,11 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 `tracking.point` is `null` when nobody is detected. The kiosk only receives
 kiosk-safe operations; it cannot manage users, network, firewall or delete
 instances.
+
+The kiosk receives `{"type":"speech","text":"…"}` for agent replies and renders
+them as ephemeral bubbles in the left chat panel. `POST /kiosk/agent/query`
+accepts an optional `"speak": false` (used by the microphone helper, which speaks
+the reply itself) to avoid duplicate audio.
 
 ### Voice assistant
 
@@ -528,6 +534,7 @@ Message types: `metrics` (`overview`), `instance` (`name`,`status`),
 | 502 | Upstream failure (LLM, Home Assistant) |
 | 503 | Provider unavailable (Incus, Home Assistant not configured) |
 | 504 | Runtime operation timeout |
+
 
 
 

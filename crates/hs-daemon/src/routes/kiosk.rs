@@ -92,6 +92,14 @@ pub struct ListeningBody {
 pub struct AgentQueryBody {
     /// User utterance (already transcribed by the browser).
     pub text: String,
+    /// Whether the kiosk should speak the reply with its local voice. The
+    /// microphone helper sets this to false because it already speaks replies.
+    #[serde(default = "default_speak")]
+    pub speak: bool,
+}
+
+fn default_speak() -> bool {
+    true
 }
 
 /// Wake-word transcript produced by the local listener.
@@ -400,6 +408,12 @@ async fn agent_query(
         Ok(response) => {
             state.kiosk.set_agent_activity(AgentActivity::Idle);
             state.kiosk.set_avatar_state(AvatarState::Speaking);
+            // The browser renders the reply and speaks it with a local OS voice,
+            // regardless of whether the query came from the kiosk UI or the
+            // microphone helper.
+            if body.speak {
+                state.kiosk.speak(response.reply.clone());
+            }
             state.kiosk.set_avatar_state(AvatarState::Idle);
             state.audit(
                 "kiosk",

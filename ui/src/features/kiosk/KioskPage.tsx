@@ -99,6 +99,12 @@ interface LiveState {
  * Demo mode (`?demo=1` or `VITE_DEMO=1`) renders labelled demo data without
  * touching the daemon.
  */
+interface ChatEntry {
+  id: number;
+  role: 'user' | 'assistant';
+  text: string;
+}
+
 export function KioskPage(): React.JSX.Element {
   const { t, language } = useI18n();
   const toast = useToast();
@@ -129,7 +135,10 @@ export function KioskPage(): React.JSX.Element {
   const [profileSheetOpen, setProfileSheetOpen] = useState(false);
   const [talkOpen, setTalkOpen] = useState(false);
   const [queryText, setQueryText] = useState('');
-  const [queryReply, setQueryReply] = useState<string | null>(null);
+  const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
+  const chatTimer = useRef(0);
+  const chatSequence = useRef(0);
+  const queryInput = useRef<HTMLInputElement | null>(null);
   const [querying, setQuerying] = useState(false);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<number>(0);
@@ -144,6 +153,13 @@ export function KioskPage(): React.JSX.Element {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(chatTimer.current);
+    },
+    [],
+  );
 
   const wake = useCallback(() => {
     lastActivity.current = Date.now();
@@ -167,6 +183,61 @@ export function KioskPage(): React.JSX.Element {
   }, 1_000);
 
   /* Data ------------------------------------------------------------------- */
+
+  const pushChat = useCallback((role: 'user' | 'assistant', text: string): void => {
+    const trimmed = text.trim();
+    if (trimmed === '') return;
+    chatSequence.current += 1;
+    setChatLog((current) => [
+      ...current.slice(-3),
+      { id: chatSequence.current, role, text: trimmed },
+    ]);
+    // Bubbles are ephemeral: they fade away unless the panel stays active.
+    window.clearTimeout(chatTimer.current);
+    chatTimer.current = window.setTimeout(() => setChatLog([]), 12_000);
+  }, []);
+
+  const speakReply = useCallback(
+    (text: string): void => {
+      const trimmed = text.trim();
+      if (trimmed === '') return;
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(trimmed);
+      const voices = synth.getVoices();
+      const preferred =
+        voices.find((voice) => voice.lang.toLowerCase().startsWith(language === 'en' ? 'en' : 'es')) ??
+        voices.find((voice) => voice.lang.toLowerCase().startsWith('es'));
+      if (preferred !== undefined) utterance.voice = preferred;
+      utterance.lang = preferred?.lang ?? (language === 'en' ? 'en-US' : 'es-ES');
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      synth.speak(utterance);
+    },
+    [language],
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    const synth = window.speechSynthesis;
+    const warm = (): void => {
+      synth.getVoices();
+    };
+    warm();
+    synth.addEventListener('voiceschanged', warm);
+    const unlock = (): void => {
+      const silent = new SpeechSynthesisUtterance(' ');
+      silent.volume = 0;
+      synth.speak(silent);
+      window.removeEventListener('pointerdown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      synth.removeEventListener('voiceschanged', warm);
+    };
+  }, []);
 
   const applySnapshot = useCallback((snapshot: KioskStateResponse) => {
     setLive({
@@ -249,6 +320,11 @@ export function KioskPage(): React.JSX.Element {
             title: t('kiosk.listening'),
             message: t('kiosk.hint', { name: event.assistant_name }),
           });
+          break;
+        case 'speech':
+          setAvatarState('speaking');
+          pushChat('assistant', event.text);
+          if (!talkOpen) speakReply(event.text);
           break;
         case 'notification':
           pushToast({
@@ -337,16 +413,15 @@ export function KioskPage(): React.JSX.Element {
   const openTalk = (): void => {
     wake();
     setTalkOpen(true);
-    setQueryReply(null);
     setAvatarState('listening');
     if (!isDemo) void kioskApi.setListening(true).catch(() => undefined);
+    window.setTimeout(() => queryInput.current?.focus(), 50);
   };
 
   const closeTalk = (): void => {
     setTalkOpen(false);
     setListening(false);
     setAvatarState('idle');
-    setQueryReply(null);
   };
 
   const setListening = (active: boolean): void => {
@@ -359,12 +434,12 @@ export function KioskPage(): React.JSX.Element {
     if (text === '' || querying) return;
     setQuerying(true);
     setQueryText('');
-    setQueryReply(null);
+    pushChat('user', text);
     setAvatarState('thinking');
     setLive((current) => ({ ...current, agentActivity: 'thinking' }));
     try {
       const response = await kioskApi.query(text);
-      setQueryReply(response.reply);
+      pushChat('assistant', response.reply);
       setLive((current) => ({ ...current, agentActivity: 'speaking' }));
       setAvatarState('speaking');
       window.clearTimeout(speechTimer.current);
@@ -374,7 +449,7 @@ export function KioskPage(): React.JSX.Element {
         setLive((current) => ({ ...current, agentActivity: 'idle' }));
       }, duration);
     } catch (cause) {
-      setQueryReply(t(errorMessageKey(cause)));
+      pushChat('assistant', t(errorMessageKey(cause)));
       setAvatarState('idle');
       setLive((current) => ({ ...current, agentActivity: 'error' }));
     } finally {
@@ -816,71 +891,93 @@ export function KioskPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      {/* Talk sheet ---------------------------------------------------------- */}
-      {talkOpen ? (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-3">
-          <div className="glass-strong w-full max-w-2xl rounded-[26px] p-5 animate-[hs-fade-up_220ms_var(--hs-ease)]">
+      {/* Left chat panel: appears while writing, bubbles are ephemeral. ----- */}
+      {talkOpen || chatLog.length > 0 || querying ? (
+        <aside className="fixed bottom-20 left-3 z-50 w-[min(92vw,400px)] sm:left-5">
+          <div className="glass-strong rounded-[24px] p-4 shadow-glow animate-[hs-fade-up_220ms_var(--hs-ease)]">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="grid h-9 w-9 place-items-center rounded-full border border-mint-400/25 bg-mint-400/[0.09] text-mint-300">
-                  <Mic size={16} />
+              <div className="flex items-center gap-2">
+                <span className="grid h-8 w-8 place-items-center rounded-full border border-mint-400/25 bg-mint-400/[0.09] text-mint-300">
+                  <Mic size={14} />
                 </span>
                 <div>
-                  <p className="text-[13px] font-medium text-ink-50">{t('kiosk.talk')}</p>
-                  <p className="text-[10.5px] text-ink-500">{t('kiosk.hint')}</p>
+                  <p className="text-[12.5px] font-medium text-ink-50">{t('kiosk.talk')}</p>
+                  <p className="text-[10px] text-ink-500">{t('kiosk.hint', { name: assistantName })}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={closeTalk}
-                className="grid h-10 w-10 place-items-center rounded-xl text-ink-400 transition hover:bg-white/[0.06] hover:text-ink-100"
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/[0.06] hover:text-ink-100"
                 aria-label={t('kiosk.close')}
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
-            {queryReply !== null ? (
-              <div className="mt-4 rounded-2xl border border-mint-400/15 bg-mint-400/[0.04] px-4 py-3">
-                <p className="text-[10px] uppercase tracking-wider text-ink-500">
-                  {t('agent.chat.reply')}
-                </p>
-                <p className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-ink-100">
-                  {queryReply}
-                </p>
+            {chatLog.length > 0 ? (
+              <div className="mt-3 max-h-[38vh] space-y-2 overflow-y-auto pr-0.5">
+                {chatLog.map((message) => (
+                  <div
+                    key={message.id}
+                    className={cn(
+                      'flex',
+                      message.role === 'user' ? 'justify-end' : 'justify-start',
+                    )}
+                  >
+                    <p
+                      className={cn(
+                        'max-w-[88%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[12.5px] leading-relaxed',
+                        message.role === 'user'
+                          ? 'bg-mint-400/[0.13] text-mint-100'
+                          : 'border border-white/[0.07] bg-white/[0.03] text-ink-100',
+                      )}
+                    >
+                      {message.text}
+                    </p>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <p className="mt-4 text-[13px] text-ink-400">
-                {querying ? t('kiosk.thinking') : avatarState === 'listening' ? t('kiosk.listening') : t('kiosk.talkHint')}
-              </p>
-            )}
+            ) : null}
 
-            <form
-              className="mt-4 flex items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void sendQuery();
-              }}
-            >
-              <input
-                value={queryText}
-                onChange={(event) => setQueryText(event.target.value)}
-                placeholder={t('kiosk.queryPlaceholder')}
-                aria-label={t('kiosk.queryPlaceholder')}
-                disabled={querying}
-                className="input min-h-[52px] flex-1"
-              />
-              <button
-                type="submit"
-                className="btn btn-primary min-h-[52px] px-5"
-                disabled={querying || queryText.trim() === ''}
-              >
-                {querying ? <Spinner size={18} className="text-[#04121a]" /> : <Mic size={18} />}
-                {t('agent.chat.send')}
-              </button>
-            </form>
+            {talkOpen ? (
+              <>
+                <p className="mt-3 text-[11px] text-ink-400">
+                  {querying
+                    ? t('kiosk.thinking')
+                    : avatarState === 'listening'
+                      ? t('kiosk.listening')
+                      : t('kiosk.talkHint')}
+                </p>
+                <form
+                  className="mt-2 flex items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void sendQuery();
+                  }}
+                >
+                  <input
+                    ref={queryInput}
+                    value={queryText}
+                    onChange={(event) => setQueryText(event.target.value)}
+                    placeholder={t('kiosk.queryPlaceholder')}
+                    aria-label={t('kiosk.queryPlaceholder')}
+                    disabled={querying}
+                    className="input min-h-[46px] flex-1"
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn-primary min-h-[46px] px-4"
+                    disabled={querying || queryText.trim() === ''}
+                  >
+                    {querying ? <Spinner size={16} className="text-[#04121a]" /> : <Mic size={16} />}
+                    {t('agent.chat.send')}
+                  </button>
+                </form>
+              </>
+            ) : null}
           </div>
-        </div>
+        </aside>
       ) : null}
 
       {/* Offline retry ------------------------------------------------------- */}
@@ -939,3 +1036,5 @@ function activityToAvatar(activity: AgentActivity): AvatarState {
       return 'idle';
   }
 }
+
+

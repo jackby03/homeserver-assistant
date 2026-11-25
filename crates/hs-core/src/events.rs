@@ -150,6 +150,11 @@ pub enum KioskEvent {
         /// Locally transcribed request that followed the name, when present.
         trailing_query: Option<String>,
     },
+    /// The assistant produced a reply that the kiosk should speak locally.
+    Speech {
+        /// Reply text, rendered with the browser/OS local voice.
+        text: String,
+    },
     /// Music state changed.
     Music {
         /// New music state.
