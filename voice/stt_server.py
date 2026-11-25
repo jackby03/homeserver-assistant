@@ -22,6 +22,7 @@ import tempfile
 import threading
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 
 import av
@@ -33,7 +34,7 @@ try:
     from wyoming.audio import AudioChunk, AudioStart, AudioStop
     from wyoming.client import AsyncClient
     from wyoming.tts import Synthesize, SynthesizeStop
-    from wyoming.wake import Detection, NotDetected
+    from wyoming.wake import Detect, Detection, NotDetected
 
     WYOMING_AVAILABLE = True
 except ImportError:  # local fallback still works without Wyoming
@@ -71,7 +72,8 @@ if VOSK_MODEL_PATH.is_dir():
 else:
     print(f"vosk model not found at {VOSK_MODEL_PATH}", file=sys.stderr)
 
-WAKE_GRAMMAR = '["hola aura", "[unk]"]'
+DEFAULT_WAKE_WORD = "aurora"
+WAKE_GRAMMAR = '["aurora", "[unk]"]'
 
 PIPER_EXE = Path(
     os.environ.get("HS_PIPER_EXE", str(Path(sys.executable).with_name("piper.exe")))
@@ -152,12 +154,14 @@ def transcribe_fast(audio: np.ndarray) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
-def detect_wake(audio: np.ndarray) -> dict:
-    """Run a Vosk grammar recognizer and report whether the wake phrase matched."""
+def detect_wake(audio: np.ndarray, name: str | None = None) -> dict:
+    """Run a Vosk grammar recognizer for the configured wake name."""
     if VOSK_MODEL is None:
         raise RuntimeError("vosk wake model is not available")
+    phrase = (name or DEFAULT_WAKE_WORD).strip().lower()
+    grammar = json.dumps([phrase, "[unk]"])
     pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
-    recognizer = KaldiRecognizer(VOSK_MODEL, 16_000, WAKE_GRAMMAR)
+    recognizer = KaldiRecognizer(VOSK_MODEL, 16_000, grammar)
     recognizer.SetWords(True)
     words: list[dict] = []
     chunks: list[str] = []
@@ -170,14 +174,15 @@ def detect_wake(audio: np.ndarray) -> dict:
     chunks.append(str(final.get("text", "")))
     words.extend(final.get("result", []))
     text = " ".join(part for part in chunks if part).strip()
+    wanted = set(phrase.split())
     confident = [
         word
         for word in words
         if float(word.get("conf", 0.0)) >= 0.45
-        and str(word.get("word", "")).lower() in {"hola", "aura"}
+        and str(word.get("word", "")).lower() in wanted
     ]
     confident_words = {str(word.get("word", "")).lower() for word in confident}
-    wake = "hola" in confident_words and "aura" in confident_words
+    wake = bool(wanted) and wanted.issubset(confident_words)
     return {"wake": wake, "text": text, "words": words}
 
 
@@ -257,15 +262,17 @@ async def wyoming_speak(text: str) -> bytes:
     return buffer.getvalue()
 
 
-async def wyoming_detect_wake(audio: np.ndarray) -> dict:
-    """Detect a wake word through a Wyoming Alkove server."""
+async def wyoming_detect_wake(audio: np.ndarray, name: str | None = None) -> dict:
+    """Detect a configurable wake word through a Wyoming Alkove server."""
     if not WYOMING_AVAILABLE:
         raise RuntimeError("wyoming client is not installed")
+    phrase = (name or DEFAULT_WAKE_WORD).strip().lower()
     pcm = _pcm16(audio)
     # Alkove's default "after a pause" context needs a little lead-in silence.
     pcm = b"\x00\x00" * 11_200 + pcm
     client = await _wyoming_client(WYOMING_WAKE_URI, read_timeout=2.0)
     try:
+        await client.write_event(Detect(names=[phrase]).event())
         await client.write_event(
             AudioStart(rate=16_000, width=2, channels=1).event()
         )
@@ -291,7 +298,7 @@ async def wyoming_detect_wake(audio: np.ndarray) -> dict:
                 detection = Detection.from_event(event)
                 return {
                     "wake": True,
-                    "text": detection.name or "hola aura",
+                    "text": detection.name or phrase,
                     "engine": "wyoming-alkove",
                 }
             if NotDetected.is_type(event.type):
@@ -391,6 +398,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "invalid audio length"})
             return
         data = self.rfile.read(length)
+        query = parse_qs(urlparse(self.path).query)
+        name = (query.get("name") or [self.headers.get("X-Wake-Name", "")])[0]
+        name = name.strip().lower() or None
         try:
             audio = decode_audio(data)
         except Exception as error:
@@ -401,25 +411,26 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             try:
-                result = asyncio.run(wyoming_detect_wake(audio))
+                result = asyncio.run(wyoming_detect_wake(audio, name))
             except Exception:
-                result = detect_wake(audio)
+                result = detect_wake(audio, name)
         except Exception as error:
             self._json(500, {"error": str(error)[:300]})
             return
         self._json(200, result)
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
-        if self.path == "/speak":
+        path = urlparse(self.path).path
+        if path == "/speak":
             self._speak()
             return
-        if self.path == "/wake":
+        if path == "/wake":
             self._wake()
             return
-        if self.path == "/transcribe-fast":
+        if path == "/transcribe-fast":
             self._transcribe_fast()
             return
-        if self.path != "/transcribe":
+        if path != "/transcribe":
             self._json(404, {"error": "not found"})
             return
         length = int(self.headers.get("Content-Length", "0"))
@@ -466,6 +477,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 

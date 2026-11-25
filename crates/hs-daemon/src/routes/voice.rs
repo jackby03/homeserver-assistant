@@ -1,6 +1,6 @@
 //! Voice assistant configuration and status routes.
 //!
-//! The assistant name is the wake word (`"Hola Aura, ..."`). Changing it here
+//! The assistant name is the wake word (`"Aurora, ..."`). Changing it here
 //! updates the kiosk hint and the local wake-word matcher immediately; no
 //! restart and no cloud service are involved.
 
@@ -85,7 +85,7 @@ async fn update_voice(
     state.kiosk.notify(
         hs_core::events::NotificationLevel::Info,
         format!(
-            "Asistente de voz actualizado: «Hola {}»",
+            "Asistente de voz actualizado: «{}»",
             updated.voice.assistant_name
         ),
     );

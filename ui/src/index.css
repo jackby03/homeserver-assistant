@@ -599,3 +599,115 @@
     opacity: 0.02;
   }
 }
+
+/* Expressive brows, cheeks and gestures */
+.avatar-brows {
+  transform-box: view-box;
+  transition: transform 320ms var(--hs-ease);
+}
+
+.avatar-brow {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 260ms var(--hs-ease);
+}
+
+.avatar-cheek {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 280ms ease, transform 280ms var(--hs-ease);
+}
+
+.avatar-root.is-listening .avatar-brows {
+  transform: translateY(-1.5px);
+}
+
+.avatar-root.is-listening .avatar-brow--left {
+  transform: rotate(7deg);
+}
+
+.avatar-root.is-listening .avatar-brow--right {
+  transform: rotate(-7deg);
+}
+
+.avatar-root.is-listening .avatar-mouth {
+  transform: scaleX(0.82) scaleY(1.35);
+}
+
+.avatar-root.is-listening .avatar-cheek {
+  opacity: 0.32;
+}
+
+.avatar-root.is-thinking .avatar-body-group {
+  animation: hs-think-sway 2.8s ease-in-out infinite;
+}
+
+.avatar-root.is-thinking .avatar-brow--left {
+  transform: translateY(-3px) rotate(-17deg);
+}
+
+.avatar-root.is-thinking .avatar-brow--right {
+  transform: translateY(0.5px) rotate(4deg);
+}
+
+.avatar-root.is-thinking .avatar-mouth {
+  transform: translateX(3px) scaleX(0.62) scaleY(0.8);
+}
+
+.avatar-root.is-speaking .avatar-brows {
+  animation: hs-brow-talk 0.9s ease-in-out infinite;
+}
+
+.avatar-root.is-speaking .avatar-brow--left {
+  transform: rotate(-3deg);
+}
+
+.avatar-root.is-speaking .avatar-brow--right {
+  transform: rotate(3deg);
+}
+
+.avatar-root.is-speaking .avatar-mouth {
+  animation: hs-speaking-mouth 0.34s ease-in-out infinite alternate;
+}
+
+.avatar-root.is-speaking .avatar-cheek {
+  opacity: 0.42;
+  animation: hs-cheek-pulse 1.8s ease-in-out infinite;
+}
+
+.avatar-root.is-profile-switch .avatar-mouth {
+  transform: scaleX(1.25) scaleY(1.15);
+}
+
+@keyframes hs-think-sway {
+  0%,
+  100% {
+    transform: rotate(-1.2deg) translateY(1px);
+  }
+  50% {
+    transform: rotate(1.4deg) translateY(-1px);
+  }
+}
+
+@keyframes hs-brow-talk {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1.8px);
+  }
+}
+
+@keyframes hs-cheek-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.32;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.5;
+  }
+}

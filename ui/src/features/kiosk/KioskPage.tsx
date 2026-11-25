@@ -130,7 +130,7 @@ export function KioskPage(): React.JSX.Element {
     network: initial?.network ?? EMPTY_NETWORK,
     agentActivity: initial?.agent_activity ?? 'idle',
   });
-  const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Aura');
+  const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Aurora');
   const [avatarState, setAvatarState] = useState<AvatarState>('idle');
   const [tracking, setTracking] = useState<TrackingPoint | null>(null);
   const [wsStatus, setWsStatus] = useState<SocketStatus>(isDemo ? 'open' : 'connecting');
@@ -710,8 +710,8 @@ export function KioskPage(): React.JSX.Element {
       try {
         const clip = await recordClip(stream, 1_500);
         if (!continuousRef.current) return;
-        if (!(await detectKioskWake(clip))) continue;
-        const outcome = await kioskApi.wake('hola aura');
+        if (!(await detectKioskWake(clip, assistantName))) continue;
+        const outcome = await kioskApi.wake(assistantName);
         if (!outcome.activated) continue;
         setAssistantName(outcome.assistant_name);
         setAvatarState('listening');
@@ -1366,7 +1366,9 @@ export function KioskPage(): React.JSX.Element {
                   )}
                 >
                   <AudioLines size={14} />
-                  {continuous ? t('kiosk.continuousOn') : t('kiosk.startContinuous')}
+                  {continuous
+                    ? t('kiosk.continuousOn')
+                    : t('kiosk.startContinuous', { name: assistantName })}
                 </button>
                 <p className="mt-3 text-[11px] text-ink-400">
                   {querying
@@ -1377,7 +1379,7 @@ export function KioskPage(): React.JSX.Element {
                 </p>
                 {micState === 'granted' && !continuous ? (
                   <p className="mt-1 text-[10.5px] text-mint-300/70">
-                    {t('kiosk.micReadyHint')}
+                    {t('kiosk.micReadyHint', { name: assistantName })}
                   </p>
                 ) : null}
                 <form
@@ -1426,7 +1428,7 @@ export function KioskPage(): React.JSX.Element {
                 </form>
                 {continuous ? (
                   <p className="mt-1.5 text-[10.5px] text-mint-300/80">
-                    {t('kiosk.continuousActive')}
+                    {t('kiosk.continuousActive', { name: assistantName })}
                   </p>
                 ) : recording || transcribing ? (
                   <p className="mt-1.5 text-[10.5px] text-mint-300/80">

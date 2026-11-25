@@ -60,7 +60,7 @@ WAKE_IDLE_TIMEOUT = 5.0
 QUERY_MAX_SECONDS = 9.0
 SILENCE_SECONDS = 1.2
 DEFAULT_THRESHOLD = 0.004
-DEFAULT_ASSISTANT_NAME = "Aura"
+DEFAULT_ASSISTANT_NAME = "Aurora"
 OUTPUT_DEVICE: int | str | None = None
 
 # Console output is UTF-8 even on Windows consoles with a legacy code page;
@@ -888,7 +888,7 @@ def main() -> int:
         args.url, token
     )
     initial_prompt = args.initial_prompt.strip() or (
-        f"Hola {assistant_name}."
+        f"{assistant_name}."
     )
     try:
         input_name = sd.query_devices(device)["name"] if device is not None else sd.query_devices(kind="input")["name"]
@@ -1031,7 +1031,7 @@ def main() -> int:
             return 0
 
         # Continuous conversation: after the wake word the user can keep
-        # talking without repeating "Hola Aura". History is sent each turn so
+        # talking without repeating the wake name. History is sent each turn so
         # the agent keeps context.
         conversation: list[dict[str, str]] = [
             {"role": "user", "content": query},
