@@ -12,11 +12,12 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Square,
   Volume2,
   Wifi,
   X,
 } from 'lucide-react';
-import { kioskApi } from '@/api/kiosk';
+import { kioskApi, transcribeKioskAudio } from '@/api/kiosk';
 import type { KioskHistoryEntry } from '@/api/kiosk';
 import { profilesApi } from '@/api/profiles';
 import { isKioskEvent } from '@/api/types';
@@ -138,6 +139,10 @@ export function KioskPage(): React.JSX.Element {
   const [queryText, setQueryText] = useState('');
   const [chatLog, setChatLog] = useState<ChatEntry[]>([]);
   const [conversation, setConversation] = useState<KioskHistoryEntry[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const chatTimer = useRef(0);
   const chatSequence = useRef(0);
   const queryInput = useRef<HTMLInputElement | null>(null);
@@ -431,8 +436,8 @@ export function KioskPage(): React.JSX.Element {
     void kioskApi.setListening(active).catch(() => undefined);
   };
 
-  const sendQuery = async (): Promise<void> => {
-    const text = queryText.trim();
+  const sendQuery = async (override?: string): Promise<void> => {
+    const text = (override ?? queryText).trim();
     if (text === '' || querying) return;
     setQuerying(true);
     setQueryText('');
@@ -464,6 +469,69 @@ export function KioskPage(): React.JSX.Element {
       setLive((current) => ({ ...current, agentActivity: 'error' }));
     } finally {
       setQuerying(false);
+    }
+  };
+
+  const toggleRecording = async (): Promise<void> => {
+    if (recording) {
+      recorderRef.current?.stop();
+      return;
+    }
+    if (
+      typeof navigator === 'undefined' ||
+      navigator.mediaDevices?.getUserMedia === undefined ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      pushChat('assistant', t('kiosk.recordUnsupported'));
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferred = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : undefined;
+      const recorder = new MediaRecorder(
+        stream,
+        preferred === undefined ? undefined : { mimeType: preferred },
+      );
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecording(false);
+        setAvatarState('idle');
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        });
+        if (blob.size === 0) return;
+        setTranscribing(true);
+        void transcribeKioskAudio(blob)
+          .then((transcript) => {
+            if (transcript.trim() === '') {
+              pushChat('assistant', t('kiosk.recordEmpty'));
+              return;
+            }
+            return sendQuery(transcript);
+          })
+          .catch(() => {
+            pushChat('assistant', t('kiosk.recordError'));
+          })
+          .finally(() => {
+            setTranscribing(false);
+          });
+      };
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+      setRecording(true);
+      setAvatarState('listening');
+      recorder.start();
+      window.setTimeout(() => {
+        if (recorder.state === 'recording') recorder.stop();
+      }, 8_000);
+    } catch {
+      pushChat('assistant', t('kiosk.recordPermission'));
     }
   };
 
@@ -972,18 +1040,42 @@ export function KioskPage(): React.JSX.Element {
                     onChange={(event) => setQueryText(event.target.value)}
                     placeholder={t('kiosk.queryPlaceholder')}
                     aria-label={t('kiosk.queryPlaceholder')}
-                    disabled={querying}
+                    disabled={querying || transcribing}
                     className="input min-h-[46px] flex-1"
                   />
                   <button
+                    type="button"
+                    className={cn(
+                      'btn min-h-[46px] px-3',
+                      recording ? 'btn-primary animate-pulse' : 'btn-secondary',
+                    )}
+                    onClick={() => void toggleRecording()}
+                    disabled={querying || transcribing}
+                    title={t('kiosk.recordHint')}
+                    aria-label={recording ? t('kiosk.stopRecording') : t('kiosk.record')}
+                  >
+                    {transcribing ? (
+                      <Spinner size={16} />
+                    ) : recording ? (
+                      <Square size={16} />
+                    ) : (
+                      <Mic size={16} />
+                    )}
+                  </button>
+                  <button
                     type="submit"
                     className="btn btn-primary min-h-[46px] px-4"
-                    disabled={querying || queryText.trim() === ''}
+                    disabled={querying || transcribing || queryText.trim() === ''}
                   >
-                    {querying ? <Spinner size={16} className="text-[#04121a]" /> : <Mic size={16} />}
+                    {querying ? <Spinner size={16} className="text-[#04121a]" /> : null}
                     {t('agent.chat.send')}
                   </button>
                 </form>
+                {recording || transcribing ? (
+                  <p className="mt-1.5 text-[10.5px] text-mint-300/80">
+                    {transcribing ? t('kiosk.transcribing') : t('kiosk.recording')}
+                  </p>
+                ) : null}
               </>
             ) : null}
           </div>

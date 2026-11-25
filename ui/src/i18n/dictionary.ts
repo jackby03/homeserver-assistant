@@ -734,6 +734,15 @@ const es = {
   'kiosk.agent.error': 'No pude completar eso',
   'kiosk.talk': 'Hablar',
   'kiosk.talking': 'Escuchando…',
+  'kiosk.record': 'Grabar voz',
+  'kiosk.stopRecording': 'Detener grabación',
+  'kiosk.recordHint': 'Pulsa y habla; se detiene a los 8 s o al pulsar de nuevo.',
+  'kiosk.recording': 'Grabando… habla ahora',
+  'kiosk.transcribing': 'Transcribiendo en local…',
+  'kiosk.recordEmpty': 'No se entendió el audio; inténtalo de nuevo.',
+  'kiosk.recordError': 'No se pudo transcribir el audio local.',
+  'kiosk.recordPermission': 'Permiso de micrófono denegado en el kiosko.',
+  'kiosk.recordUnsupported': 'Este navegador no soporta grabación de micrófono.',
   'kiosk.talkHint': 'Pulsa para hablar',
   'kiosk.listening': 'Te escucho',
   'kiosk.thinking': 'Pensando…',
@@ -1620,6 +1629,15 @@ const en: Dictionary = {
   'kiosk.agent.error': 'I could not complete that',
   'kiosk.talk': 'Talk',
   'kiosk.talking': 'Listening…',
+  'kiosk.record': 'Record voice',
+  'kiosk.stopRecording': 'Stop recording',
+  'kiosk.recordHint': 'Tap and speak; stops after 8 s or on tap again.',
+  'kiosk.recording': 'Recording… speak now',
+  'kiosk.transcribing': 'Transcribing locally…',
+  'kiosk.recordEmpty': 'Speech not understood; try again.',
+  'kiosk.recordError': 'Could not transcribe locally.',
+  'kiosk.recordPermission': 'Kiosk microphone permission denied.',
+  'kiosk.recordUnsupported': 'This browser cannot record microphone audio.',
   'kiosk.talkHint': 'Tap to talk',
   'kiosk.listening': 'I am listening',
   'kiosk.thinking': 'Thinking…',
@@ -1810,4 +1828,5 @@ export function interpolate(template: string, vars?: Record<string, string | num
   const withDouble = replace(template, /\{\{(\w+)\}\}/g);
   return replace(withDouble, /\{(\w+)\}/g);
 }
+
 
