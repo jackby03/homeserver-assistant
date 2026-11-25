@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 import sys
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -35,6 +38,16 @@ ALLOWED_ORIGINS = {
 }
 MODEL = wakeword.WhisperModel("base", device="cpu", compute_type="int8")
 
+PIPER_EXE = Path(
+    os.environ.get("HS_PIPER_EXE", str(Path(sys.executable).with_name("piper.exe")))
+)
+PIPER_MODEL = Path(
+    os.environ.get(
+        "HS_PIPER_MODEL",
+        str(ROOT.parent / ".demo" / "piper" / "es_MX-claude-high.onnx"),
+    )
+)
+
 
 def decode_audio(data: bytes) -> np.ndarray:
     container = av.open(io.BytesIO(data))
@@ -50,6 +63,27 @@ def decode_audio(data: bytes) -> np.ndarray:
     if not chunks:
         return np.zeros(0, dtype=np.float32)
     return np.concatenate(chunks).astype(np.float32)
+
+
+def synthesize(text: str) -> bytes:
+    """Render text with the bundled Piper female voice and return a WAV."""
+    if not PIPER_EXE.is_file():
+        raise RuntimeError(f"piper executable not found: {PIPER_EXE}")
+    if not PIPER_MODEL.is_file():
+        raise RuntimeError(f"piper model not found: {PIPER_MODEL}")
+    with tempfile.TemporaryDirectory(prefix="hs-tts-") as directory:
+        output = Path(directory) / "reply.wav"
+        result = subprocess.run(
+            [str(PIPER_EXE), "-m", str(PIPER_MODEL), "-f", str(output)],
+            input=text,
+            text=True,
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0 or not output.is_file():
+            detail = (result.stderr or result.stdout).strip()[:300]
+            raise RuntimeError(f"piper failed: {detail}")
+        return output.read_bytes()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -83,7 +117,36 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json(404, {"error": "not found"})
 
+    def _speak(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > 64 * 1024:
+            self._json(400, {"error": "invalid text length"})
+            return
+        try:
+            payload = json.loads(self.rfile.read(length))
+            text = str(payload.get("text", "")).strip()[:2_000]
+        except Exception:
+            self._json(400, {"error": "invalid JSON"})
+            return
+        if text == "":
+            self._json(400, {"error": "empty text"})
+            return
+        try:
+            wav = synthesize(text)
+        except Exception as error:
+            self._json(500, {"error": str(error)[:300]})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(wav)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(wav)
+
     def do_POST(self) -> None:  # noqa: N802 - http.server API
+        if self.path == "/speak":
+            self._speak()
+            return
         if self.path != "/transcribe":
             self._json(404, {"error": "not found"})
             return

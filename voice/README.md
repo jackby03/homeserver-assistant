@@ -149,7 +149,9 @@ HF_HOME=/var/lib/homecore/hf python3 voice/stt_server.py
 ```
 
 It listens on `127.0.0.1:5055`, decodes in memory with PyAV, transcribes with the
-same faster-whisper `base` model and returns `{"text": "..."}`. The kiosk then
+same faster-whisper `base` model and returns `{"text": "..."}`. It also exposes `POST /speak {"text": "..."}`, which renders the reply
+with the bundled Piper female voice and returns `audio/wav`; the kiosk plays it
+with an `<audio>` element instead of relying on the Windows SAPI voices. The kiosk then
 sends that transcript through the normal local/LLM agent route. Audio is never
 written to disk and leaves nothing but the loopback request.
 
