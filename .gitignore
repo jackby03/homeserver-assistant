@@ -54,3 +54,6 @@ iso/output/
 *.iso
 *.img
 *.qcow2
+
+# Local demo artifacts (VM/ISO screenshots and build scripts)
+/.demo/

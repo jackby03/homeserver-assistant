@@ -556,11 +556,11 @@ export interface HomeAssistantStatus {
   running: boolean;
   version: string | null;
   url: string | null;
-  instance: string | null;
+  instance: InstanceSummary | null;
 }
 
 export interface HomeAssistantProvisionResponse {
-  instance: string;
+  instance: InstanceSummary;
   url: string;
 }
 

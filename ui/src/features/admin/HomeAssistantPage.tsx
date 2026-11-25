@@ -212,7 +212,7 @@ export function HomeAssistantPage(): React.JSX.Element {
                     <span className="chip tabular">v{currentStatus.version}</span>
                   ) : null}
                   {currentStatus?.instance != null ? (
-                    <span className="chip font-mono">{currentStatus.instance}</span>
+                    <span className="chip font-mono">{currentStatus.instance.name}</span>
                   ) : null}
                 </div>
               </div>
