@@ -219,36 +219,58 @@ def stream_probe_level(device: int, attempts: int = 6) -> float | None:
     return sum(levels) / len(levels) if levels else None
 
 
+def wasapi_hostapi() -> int | None:
+    """Return the PortAudio index of the Windows WASAPI host API."""
+    for index, host in enumerate(sd.query_hostapis()):
+        if "wasapi" in str(host.get("name", "")).lower():
+            return index
+    return None
+
+
 def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | None:
-    """Pick the strongest input device, optionally filtered by name (G435)."""
-    best: tuple[float, int] | None = None
+    """Pick the strongest matching input, preferring the WASAPI endpoint.
+
+    Audacity and Windows default capture use WASAPI; MME/DirectSound can expose
+    the same G435 name but return silence or room noise only. WASAPI is preferred
+    when it actually delivers stream signal, with the other host APIs as fallback.
+    """
     wanted = (name_filter or "").lower()
+    wasapi = wasapi_hostapi()
+    scored: list[tuple[int, float, int]] = []  # (index, score, hostapi)
     for index, device in input_devices():
         if wanted and wanted not in device["name"].lower():
             continue
         level = stream_probe_level(index)
         if level is None:
             continue
+        hostapi = int(device["hostapi"])
+        scored.append((index, level, hostapi))
         print(
-            f"[wakeword] input [{index:2d}] stream peak={level:.6f} "
-            f"{device['name']}"
+            f"[wakeword] input [{index:2d}] host={hostapi} "
+            f"stream mean={level:.6f} {device['name']}"
         )
-        if best is None or level > best[0]:
-            best = (level, index)
-    if best is None:
+    if not scored:
         print(
             f"[wakeword] no input device matched '{name_filter or '*'}'",
             file=sys.stderr,
         )
         return None
-    if best[0] < 0.0002:
+    wasapi_candidates = [
+        entry for entry in scored if wasapi is not None and entry[2] == wasapi
+    ]
+    pool = wasapi_candidates if any(entry[1] > 0.0002 for entry in wasapi_candidates) else scored
+    index, level, hostapi = max(pool, key=lambda entry: entry[1])
+    print(
+        f"[wakeword] auto-selected input device [{index}] "
+        f"(host={hostapi}, mean={level:.6f})"
+    )
+    if level < 0.0002:
         print(
             "[wakeword] WARNING: selected microphone is almost silent. "
             "Check the headset is on, unmuted and its mic boom is down.",
             file=sys.stderr,
         )
-    print(f"[wakeword] auto-selected input device [{best[1]}]")
-    return best[1], best[0]
+    return index, level
 
 
 def rms(block: np.ndarray) -> float:
