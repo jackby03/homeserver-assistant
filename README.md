@@ -209,7 +209,7 @@ Resultados de la última ejecución en el entorno de desarrollo (Windows):
 | `cargo test --workspace --offline --lib --tests` | **405 tests, 0 fallos** (17 binarios de test) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | limpio |
 | `cargo fmt --all -- --check` | limpio |
-| `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 15 tests / `ui/dist` 0,90 MB |
+| `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 20 tests / `ui/dist` 0,90 MB |
 | `python3 scripts/check-assets.py` | 75 comprobaciones, 0 fallos |
 | Smoke del daemon real (`serve --dev`) | `/api/v1/health`, `/setup/status`, UI admin y `/kiosk` con cookie responden 200 |
 | ShellCheck de los scripts (por el agente de infraestructura) | 0 avisos en 7 scripts |
