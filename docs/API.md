@@ -451,7 +451,7 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 {"type":"avatar","state":"tracking","profile_id":"…"}
 {"type":"tracking","point":{"x":0.42,"y":0.55,"confidence":0.87}}
 {"type":"profile_activated","profile":{…}}
-{"type":"wake","assistant_name":"Aura","trailing_query":"enciende la luz"}
+{"type":"wake","assistant_name":"Aurora","trailing_query":"enciende la luz"}
 {"type":"speech","text":"Vale, enciendo la luz del salón."}
 {"type":"music","state":{"playing":true,"track":"…","artist":"…","volume":60,"sink":"…"}}
 {"type":"agent","activity":"thinking"}
@@ -507,10 +507,10 @@ permission message. Example:
 
 `GET /voice/config` →
 ```json
-{"config":{"assistant_name":"Aura","wake_word_enabled":true,
+{"config":{"assistant_name":"Aurora","wake_word_enabled":true,
            "activation_mode":"both","sensitivity":0.6,
            "listening_window_secs":8,"language":"es"},
- "status":{"assistant_name":"Aura","wake_word_enabled":true,
+ "status":{"assistant_name":"Aurora","wake_word_enabled":true,
            "activation_mode":"both","listening":false,
            "last_activation":null,"activations":0}}
 ```
@@ -524,7 +524,7 @@ process. `status.listener_connected` tells the portal whether that helper is
 actually running (heartbeat younger than 45 s), so an enabled wake word with no
 listener is visible instead of silently doing nothing. A `200` response:
 ```json
-{"activated":true,"assistant_name":"Aura","listening":true,
+{"activated":true,"assistant_name":"Aurora","listening":true,
  "trailing_query":"enciende la luz","reason":"activated"}
 ```
 Non-matching speech returns `activated:false` with `reason` (`not_matched`,

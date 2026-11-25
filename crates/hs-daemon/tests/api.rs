@@ -827,7 +827,7 @@ async fn voice_assistant_name_is_configurable_and_wake_word_activates_the_kiosk(
         )
         .await;
     assert_eq!(config.status, StatusCode::OK, "{}", config.text);
-    assert_eq!(config.body["config"]["assistant_name"], "Aura");
+    assert_eq!(config.body["config"]["assistant_name"], "Aurora");
     assert_eq!(config.body["config"]["wake_word_enabled"], true);
     assert_eq!(config.body["config"]["activation_mode"], "both");
 
@@ -935,7 +935,7 @@ async fn disabled_wake_word_ignores_transcripts() {
             Method::PUT,
             "/api/v1/voice/config",
             Some(json!({
-                "assistant_name": "Aura",
+                "assistant_name": "Aurora",
                 "wake_word_enabled": false,
                 "activation_mode": "push_to_talk",
                 "sensitivity": 0.6,

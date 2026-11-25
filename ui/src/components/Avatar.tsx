@@ -218,6 +218,40 @@ export function AvatarFigure({
               <circle cx="128.5" cy="97" r="3.1" fill="#ffffff" opacity="0.5" />
             </g>
           </g>
+          <g className="avatar-brows" aria-hidden="true">
+            <path
+              className="avatar-brow avatar-brow--left"
+              d="M55 77 Q67 71 80 77"
+              fill="none"
+              stroke={eyeColor}
+              strokeWidth="4"
+              strokeLinecap="round"
+              opacity="0.62"
+            />
+            <path
+              className="avatar-brow avatar-brow--right"
+              d="M120 77 Q133 71 145 77"
+              fill="none"
+              stroke={eyeColor}
+              strokeWidth="4"
+              strokeLinecap="round"
+              opacity="0.62"
+            />
+          </g>
+          <circle
+            className="avatar-cheek avatar-cheek--left"
+            cx="51"
+            cy="124"
+            r="8"
+            fill={withAlpha(baseColor, 0.65)}
+          />
+          <circle
+            className="avatar-cheek avatar-cheek--right"
+            cx="149"
+            cy="124"
+            r="8"
+            fill={withAlpha(baseColor, 0.65)}
+          />
           <rect
             className="avatar-mouth"
             x="88"

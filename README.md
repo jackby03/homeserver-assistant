@@ -59,7 +59,7 @@ visión 100 % local.
 - **IA y perfiles**: proveedores OpenAI, Anthropic, DeepSeek, opencode-go y
   endpoints compatibles, claves cifradas, herramientas con permisos por perfil,
   workflows tipo nodo y perfiles familiares con avatar y biometría local.
-- **Voz en el kiosko**: wake word continuo «Hola Aura» con Vosk, STT local
+- **Voz en el kiosko**: wake word continuo «Aurora» con Wyoming/Vosk, STT local
   (Vosk/faster-whisper), Piper local y micrófono de Chrome; sin depender de la
   interfaz PortAudio/WDM del host de desarrollo.
 - **Asistente local-first**: router de comandos en español que resuelve sin IA

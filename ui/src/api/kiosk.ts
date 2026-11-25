@@ -93,8 +93,12 @@ const STT_BASE_URL = (
  * Chrome/MediaRecorder uses the same Windows capture path as Audacity, so it
  * works with the G435 where PortAudio's DirectSound/MME streams were corrupt.
  */
-export async function detectKioskWake(blob: Blob): Promise<boolean> {
-  const response = await fetch(`${STT_BASE_URL}/wake`, {
+export async function detectKioskWake(
+  blob: Blob,
+  name: string,
+): Promise<boolean> {
+  const query = name.trim() === '' ? '' : `?name=${encodeURIComponent(name.trim())}`;
+  const response = await fetch(`${STT_BASE_URL}/wake${query}`, {
     method: 'POST',
     headers: { 'Content-Type': blob.type || 'application/octet-stream' },
     body: blob,
