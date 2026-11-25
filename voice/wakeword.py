@@ -239,23 +239,29 @@ def stream_probe_level(device: int, attempts: int = 6) -> float | None:
     return sum(levels) / len(levels) if levels else None
 
 
-def wasapi_hostapi() -> int | None:
-    """Return the PortAudio index of the Windows WASAPI host API."""
-    for index, host in enumerate(sd.query_hostapis()):
-        if "wasapi" in str(host.get("name", "")).lower():
-            return index
-    return None
+def hostapi_priority(hostapi: int) -> int:
+    """PortAudio host APIs are not equally usable with the G435.
+
+    An acoustic loopback test (playing the user's own OGG through the headset)
+    transcribed correctly only when captured through DirectSound; MME/WASAPI
+    delivered louder but unintelligible audio for this device.
+    """
+    try:
+        name = str(sd.query_hostapis(hostapi).get("name", "")).lower()
+    except Exception:
+        return 9
+    if "directsound" in name:
+        return 0
+    if "wasapi" in name:
+        return 1
+    if "mme" in name:
+        return 2
+    return 3
 
 
 def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | None:
-    """Pick the strongest matching input, preferring the WASAPI endpoint.
-
-    Audacity and Windows default capture use WASAPI; MME/DirectSound can expose
-    the same G435 name but return silence or room noise only. WASAPI is preferred
-    when it actually delivers stream signal, with the other host APIs as fallback.
-    """
+    """Pick the strongest matching input, preferring the working host API."""
     wanted = (name_filter or "").lower()
-    wasapi = wasapi_hostapi()
     scored: list[tuple[int, float, int]] = []  # (index, score, hostapi)
     for index, device in input_devices():
         if wanted and wanted not in device["name"].lower():
@@ -275,11 +281,15 @@ def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | N
             file=sys.stderr,
         )
         return None
-    wasapi_candidates = [
-        entry for entry in scored if wasapi is not None and entry[2] == wasapi
-    ]
-    pool = wasapi_candidates if any(entry[1] > 0.0002 for entry in wasapi_candidates) else scored
-    index, level, hostapi = max(pool, key=lambda entry: entry[1])
+    ordered = sorted(
+        scored, key=lambda entry: (hostapi_priority(entry[2]), -entry[1])
+    )
+    # DirectSound is the only host API that captured intelligible G435 audio,
+    # even at low levels; do not fall back to a louder-but-garbled endpoint.
+    choice = ordered[0]
+    if hostapi_priority(choice[2]) != 0 and choice[1] < 0.0002:
+        choice = max(scored, key=lambda entry: entry[1])
+    index, level, hostapi = choice
     print(
         f"[wakeword] auto-selected input device [{index}] "
         f"(host={hostapi}, mean={level:.6f})"
@@ -436,7 +446,7 @@ def record_utterance(
                 for offset in (0, 512, 1024)
             ]
             probability = max(probabilities)
-        energy_gate = max(0.005, min(threshold * 1.5, 0.012))
+        energy_gate = max(0.001, min(threshold * 1.5, 0.012))
         is_speech = (probability is not None and probability >= 0.5) or (
             level >= energy_gate
         )
@@ -843,7 +853,7 @@ def main() -> int:
             device, _level = choice
     if args.threshold is None:
         floor = measure_noise_floor(device)
-        args.threshold = max(0.0015, min(floor * 2.5, 0.008)) if floor else DEFAULT_THRESHOLD
+        args.threshold = max(0.0008, min(floor * 2.5, 0.008)) if floor else DEFAULT_THRESHOLD
     if args.calibrate:
         level = rms(record_window(3.0, device))
         print(f"[wakeword] microphone RMS over 3 s: {level:.6f}")
@@ -1078,6 +1088,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
 
 
