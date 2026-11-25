@@ -122,11 +122,13 @@ export function VoiceSection(): React.JSX.Element {
               />
             </Field>
             <div className="flex items-end justify-end gap-3 pb-1">
+              <div className="flex flex-col items-end gap-2">
               <Toggle
                 checked={config.wake_word_enabled}
                 onChange={(wake_word_enabled) => update({ wake_word_enabled })}
                 label={t('agent.voice.wakeEnabled')}
               />
+            </div>
             </div>
           </div>
 
@@ -187,10 +189,18 @@ export function VoiceSection(): React.JSX.Element {
             </Field>
           </div>
 
+          {status !== null && config.wake_word_enabled && !status.listener_connected ? (
+            <p className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3.5 py-2.5 text-[11.5px] leading-relaxed text-amber-200">
+              {t('agent.voice.listenerDisconnected')}
+            </p>
+          ) : null}
+
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
             <p className="flex items-center gap-1.5 text-[11px] text-ink-500">
               <ShieldCheck size={13} className="text-mint-400" />
-              {t('agent.voice.localOnly')}
+              {status?.listener_connected
+                ? t('agent.voice.listenerConnected')
+                : t('agent.voice.localOnly')}
             </p>
             <button
               type="button"

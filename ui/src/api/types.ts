@@ -103,6 +103,7 @@ export interface VoiceStatus {
   listening: boolean;
   last_activation: string | null;
   activations: number;
+  listener_connected: boolean;
 }
 
 export interface VoiceConfigResponse {
@@ -635,6 +636,13 @@ export interface HomeAssistantScene {
 /* Agent, tools and workflows                                                 */
 /* -------------------------------------------------------------------------- */
 
+export interface ProviderTestResult {
+  ok: boolean;
+  model: string | null;
+  reply: string | null;
+  error: string | null;
+}
+
 export interface ProviderRecord {
   id: Uuid;
   kind: LlmProviderKind;
@@ -809,6 +817,7 @@ export interface KioskStateResponse {
     activation_mode: 'wake_word' | 'push_to_talk' | 'both';
     listening: boolean;
     listening_window_secs: number;
+    listener_connected: boolean;
   };
 }
 

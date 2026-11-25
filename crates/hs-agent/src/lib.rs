@@ -47,5 +47,5 @@ pub mod service;
 pub use error::{AgentError, AgentResult};
 pub use llm::{LlmClient, LlmClientFactory, LlmRequest, LlmResponse, LlmToolSpec};
 pub use prompt::build_system_prompt;
-pub use providers::DefaultFactory;
-pub use service::{AgentService, UpsertProviderRequest};
+pub use providers::{normalize_model, DefaultFactory, DEFAULT_OPENCODE_GO_BASE_URL};
+pub use service::{AgentService, ProviderTest, UpsertProviderRequest};

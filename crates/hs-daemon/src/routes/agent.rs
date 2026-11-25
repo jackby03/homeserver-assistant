@@ -30,6 +30,7 @@ pub fn router() -> Router<SharedState> {
             axum::routing::delete(delete_provider),
         )
         .route("/agent/providers/{id}/activate", post(activate_provider))
+        .route("/agent/providers/{id}/test", post(test_provider))
         .route("/agent/tools", get(list_tools))
         .route("/agent/chat", post(chat))
         .route(
@@ -150,6 +151,67 @@ async fn activate_provider(
         None,
     );
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+/// Provider connectivity test response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderTestResponse {
+    /// Whether the provider answered a minimal completion request.
+    pub ok: bool,
+    /// Normalized model id sent to the provider.
+    pub model: Option<String>,
+    /// Model reply when successful.
+    pub reply: Option<String>,
+    /// Detailed provider error when something failed.
+    pub error: Option<String>,
+}
+
+/// `POST /api/v1/agent/providers/{id}/test`
+///
+/// Sends a minimal completion with the stored, encrypted API key and returns the
+/// provider's real error (bad model id, wrong base URL, rejected key). Only an
+/// authenticated admin can reach it.
+async fn test_provider(
+    State(state): State<SharedState>,
+    auth: AdminAuth,
+    Path(id): Path<Uuid>,
+) -> HttpResult<Json<ProviderTestResponse>> {
+    auth.require(Permission::AgentManage)?;
+    match state.agent.test_provider(id).await {
+        Ok(test) => {
+            state.audit(
+                &auth.user().username,
+                "agent.provider_test",
+                Some(&id.to_string()),
+                AuditOutcome::Success,
+                None,
+                Some(serde_json::json!({"model": test.model})),
+            );
+            Ok(Json(ProviderTestResponse {
+                ok: true,
+                model: Some(test.model),
+                reply: Some(test.reply),
+                error: None,
+            }))
+        }
+        Err(err) => {
+            let message = err.to_string();
+            state.audit(
+                &auth.user().username,
+                "agent.provider_test",
+                Some(&id.to_string()),
+                AuditOutcome::Failure,
+                None,
+                Some(serde_json::json!({"error": message})),
+            );
+            Ok(Json(ProviderTestResponse {
+                ok: false,
+                model: None,
+                reply: None,
+                error: Some(message),
+            }))
+        }
+    }
 }
 
 async fn list_tools(

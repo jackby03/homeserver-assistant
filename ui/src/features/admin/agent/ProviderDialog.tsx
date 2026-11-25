@@ -44,7 +44,7 @@ export function ProviderDialog({ provider, onClose, onSaved }: ProviderDialogPro
     setEnabled(provider.enabled);
   }, [provider]);
 
-  const requiresBaseUrl = kind === 'custom' || kind === 'opencode_go';
+  const requiresBaseUrl = kind === 'custom';
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -112,6 +112,10 @@ export function ProviderDialog({ provider, onClose, onSaved }: ProviderDialogPro
                 onClick={() => {
                   setKind(value);
                   if (label === '') setLabel(t(PROVIDER_LABEL_KEYS[value]));
+                  if (value === 'opencode_go') {
+                    if (baseUrl.trim() === '') setBaseUrl(BASE_URL_PLACEHOLDERS.opencode_go);
+                    if (model.trim() === '') setModel(MODEL_PLACEHOLDERS.opencode_go);
+                  }
                 }}
                 aria-pressed={kind === value}
                 className={cn(

@@ -213,7 +213,7 @@ Resultados de la última ejecución en el entorno de desarrollo (Windows):
 
 | Comprobación | Resultado |
 |---|---|
-| `cargo test --workspace --offline --lib --tests` | **434 tests, 0 fallos** (17 binarios de test) |
+| `cargo test --workspace --offline --lib --tests` | **436 tests, 0 fallos** (17 binarios de test) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | limpio |
 | `cargo fmt --all -- --check` | limpio |
 | `pnpm typecheck` / `pnpm test` / `pnpm build` | limpio / 20 tests / `ui/dist` 0,91 MB |
@@ -327,6 +327,8 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 ## Licencia
 
 MIT — ver [`LICENSE`](LICENSE).
+
+
 
 
 

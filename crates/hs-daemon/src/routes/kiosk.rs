@@ -58,6 +58,8 @@ pub struct KioskVoiceState {
     pub listening: bool,
     /// Listening window duration in seconds.
     pub listening_window_secs: u8,
+    /// Whether the local microphone listener is connected.
+    pub listener_connected: bool,
 }
 
 /// Minimal scene descriptor for the kiosk grid.
@@ -131,6 +133,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/kiosk/listening", post(listening))
         .route("/kiosk/agent/query", post(agent_query))
         .route("/kiosk/wake", post(wake_word))
+        .route("/kiosk/voice/heartbeat", post(voice_heartbeat))
         .route("/kiosk/music/play", post(music_play))
         .route("/kiosk/music/pause", post(music_pause))
         .route("/kiosk/music/volume", post(music_volume))
@@ -273,9 +276,19 @@ async fn state_snapshot(State(state): State<SharedState>) -> Json<KioskStateResp
             activation_mode: voice_config.activation_mode,
             listening: voice_status.listening,
             listening_window_secs: voice_config.listening_window_secs,
+            listener_connected: voice_status.listener_connected,
         },
         scenes,
     })
+}
+
+/// `POST /api/v1/kiosk/voice/heartbeat`
+///
+/// The local microphone helper calls this every few seconds so the portal can
+/// tell whether voice control is actually available on this appliance.
+async fn voice_heartbeat(State(state): State<SharedState>) -> HttpResult<Json<serde_json::Value>> {
+    state.voice.listener_heartbeat();
+    Ok(Json(serde_json::json!({"listener_connected": true})))
 }
 
 /// `POST /api/v1/kiosk/wake`

@@ -184,7 +184,20 @@ def main() -> int:
     model = WhisperModel(args.model, device="auto", compute_type="int8")
     print(f"[wakeword] listening locally; wake endpoint {args.url}/api/v1/kiosk/wake")
 
+    last_heartbeat = 0.0
     while True:
+        # Tell the daemon that a local microphone listener is alive; the portal
+        # shows "listener connected" only while these heartbeats arrive.
+        now = time.monotonic()
+        if now - last_heartbeat >= 15.0:
+            try:
+                post_json(
+                    f"{args.url}/api/v1/kiosk/voice/heartbeat", token, {}
+                )
+            except (urllib.error.URLError, TimeoutError, ValueError):
+                pass
+            last_heartbeat = now
+
         window = record_window(WAKE_WINDOW_SECONDS, args.device)
         if rms(window) < args.threshold:
             if args.once:

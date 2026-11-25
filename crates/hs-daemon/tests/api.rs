@@ -255,6 +255,22 @@ async fn kiosk_api_requires_the_kiosk_token() {
     assert_eq!(authorized.status, StatusCode::OK, "{}", authorized.text);
     assert_eq!(authorized.body["device_name"], "HomeServer Assistant");
     assert!(authorized.body["profile"].is_null());
+    assert_eq!(authorized.body["voice"]["listener_connected"], false);
+
+    let heartbeat = app
+        .kiosk(
+            Method::POST,
+            "/api/v1/kiosk/voice/heartbeat",
+            Some(json!({})),
+            Some(&token),
+        )
+        .await;
+    assert_eq!(heartbeat.status, StatusCode::OK, "{}", heartbeat.text);
+    let with_listener = app
+        .kiosk(Method::GET, "/api/v1/kiosk/state", None, Some(&token))
+        .await;
+    assert_eq!(with_listener.status, StatusCode::OK);
+    assert_eq!(with_listener.body["voice"]["listener_connected"], true);
 
     let query = app
         .kiosk(
@@ -1069,4 +1085,73 @@ async fn agent_endpoints_expose_tools_and_provider_validation() {
         .secrets
         .contains(&secret_name)
         .expect("secret lookup"));
+}
+
+#[tokio::test]
+async fn opencode_go_provider_is_normalized_and_can_be_tested() {
+    let app = TestApp::spawn().await;
+    let session = app.setup_admin("admin", PASSWORD).await;
+
+    let created = app
+        .admin(
+            Method::POST,
+            "/api/v1/agent/providers",
+            Some(json!({
+                "kind": "opencode_go",
+                "label": "OpenCode Go",
+                "model": "opencode-go/deepseek-v4.1-flash",
+                "base_url": "https://opencode.ai/zen/go",
+                "api_key": "sk-test-not-real",
+                "enabled": true
+            })),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::OK, "{}", created.text);
+    // The backend normalizes the documented base URL and the raw model id.
+    assert_eq!(created.body["model"], "deepseek-v4.1-flash");
+    assert_eq!(created.body["base_url"], "https://opencode.ai/zen/go/v1");
+    let provider_id = created.body["id"].as_str().expect("provider id");
+
+    // The connectivity test returns the provider's real error instead of a
+    // generic failure. A loopback port with no listener fails fast offline.
+    let unreachable = app
+        .admin(
+            Method::POST,
+            "/api/v1/agent/providers",
+            Some(json!({
+                "kind": "custom",
+                "label": "Unreachable",
+                "model": "local-model",
+                "base_url": "http://127.0.0.1:9/v1",
+                "api_key": "sk-test-not-real",
+                "enabled": true
+            })),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(unreachable.status, StatusCode::OK, "{}", unreachable.text);
+    let unreachable_id = unreachable.body["id"].as_str().expect("provider id");
+    let tested = app
+        .admin(
+            Method::POST,
+            &format!("/api/v1/agent/providers/{unreachable_id}/test"),
+            None,
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(tested.status, StatusCode::OK, "{}", tested.text);
+    assert_eq!(tested.body["ok"], false);
+    assert!(
+        tested.body["error"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty()),
+        "the test endpoint must report a detailed provider error: {}",
+        tested.text
+    );
+    // The unused OpenCode provider id documents the fixture shape.
+    assert!(!provider_id.is_empty());
 }

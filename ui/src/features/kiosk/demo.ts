@@ -66,5 +66,6 @@ export const DEMO_KIOSK_STATE: KioskStateResponse = {
     activation_mode: 'both',
     listening: false,
     listening_window_secs: 8,
+    listener_connected: true,
   },
 };

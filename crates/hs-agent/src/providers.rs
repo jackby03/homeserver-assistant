@@ -29,6 +29,8 @@ pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
 /// Default base URL for the Anthropic Messages API.
 pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
+/// Default base URL for the OpenCode Zen "Go" OpenAI-compatible gateway.
+pub const DEFAULT_OPENCODE_GO_BASE_URL: &str = "https://opencode.ai/zen/go/v1";
 /// `anthropic-version` header value.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 /// Default completion token budget used by [`crate::AgentService`].
@@ -89,6 +91,7 @@ impl DefaultFactory {
             return Ok(client.clone());
         }
         let client = reqwest::Client::builder()
+            .user_agent(concat!("HomeServerAssistant/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS))
             .build()
             .map_err(|error| {
@@ -116,6 +119,7 @@ impl LlmClientFactory for DefaultFactory {
                 http,
                 url: openai_chat_completions_url(&base),
                 api_key: api_key.to_owned(),
+                opencode_go: provider.kind == LlmProviderKind::OpencodeGo,
             }))
         } else {
             let base = anthropic_base_url(provider.base_url.as_deref())?;
@@ -142,7 +146,8 @@ pub fn openai_base_url(kind: LlmProviderKind, base_url: Option<&str>) -> AgentRe
     let base = match kind {
         LlmProviderKind::OpenAi => base_url.unwrap_or(DEFAULT_OPENAI_BASE_URL),
         LlmProviderKind::DeepSeek => base_url.unwrap_or(DEFAULT_DEEPSEEK_BASE_URL),
-        LlmProviderKind::OpencodeGo | LlmProviderKind::Custom => base_url.ok_or_else(|| {
+        LlmProviderKind::OpencodeGo => base_url.unwrap_or(DEFAULT_OPENCODE_GO_BASE_URL),
+        LlmProviderKind::Custom => base_url.ok_or_else(|| {
             AgentError::Provider(format!(
                 "the `{}` provider requires an explicit base URL",
                 kind.id()
@@ -155,7 +160,49 @@ pub fn openai_base_url(kind: LlmProviderKind, base_url: Option<&str>) -> AgentRe
             ));
         }
     };
-    validated_base_url(base)
+    let base = normalize_openai_base(kind, base);
+    validated_base_url(&base)
+}
+
+/// Normalize common provider-base mistakes before adding `/chat/completions`.
+///
+/// - OpenCode Zen documents `https://opencode.ai/zen/go/v1`; pasting the
+///   console/UI URL without `/v1` is a common mistake, so it is appended.
+/// - A full endpoint pasted by mistake (`.../chat/completions`) is trimmed.
+fn normalize_openai_base(kind: LlmProviderKind, base: &str) -> String {
+    let mut base = base.trim().trim_end_matches('/').to_owned();
+    if let Some(stripped) = base.strip_suffix("/chat/completions") {
+        base = stripped.trim_end_matches('/').to_owned();
+    }
+    if kind == LlmProviderKind::OpencodeGo {
+        if base.ends_with("/zen/go") {
+            base.push_str("/v1");
+        } else if let Some(idx) = base.find("/zen/go/") {
+            let tail = &base[idx + "/zen/go/".len()..];
+            if !tail.starts_with("v1") {
+                base = format!("{}/v1", base.trim_end_matches('/'));
+            }
+        }
+    }
+    base
+}
+
+/// Normalize the model id for a provider.
+///
+/// OpenCode Zen's model list exposes raw ids (`deepseek-v4.1-flash`); the
+/// OpenCode CLI may show them prefixed (`opencode-go/deepseek-v4.1-flash`).
+/// The gateway expects the raw id, so known UI prefixes are stripped.
+#[must_use]
+pub fn normalize_model(kind: LlmProviderKind, model: &str) -> String {
+    let model = model.trim();
+    if kind == LlmProviderKind::OpencodeGo {
+        for prefix in ["opencode-go/", "opencode/"] {
+            if let Some(stripped) = model.strip_prefix(prefix) {
+                return stripped.trim().to_owned();
+            }
+        }
+    }
+    model.to_owned()
 }
 
 /// Resolve the Anthropic API root for a provider record.
@@ -198,17 +245,28 @@ struct OpenAiCompatibleClient {
     http: reqwest::Client,
     url: String,
     api_key: String,
+    /// OpenCode Zen Go requires a stable per-conversation session header.
+    opencode_go: bool,
 }
 
 #[async_trait]
 impl LlmClient for OpenAiCompatibleClient {
     async fn complete(&self, request: LlmRequest) -> AgentResult<LlmResponse> {
         let body = openai_request_body(&request);
-        let response = self
+        let mut builder = self
             .http
             .post(&self.url)
             .bearer_auth(&self.api_key)
-            .json(&body)
+            .json(&body);
+        if self.opencode_go {
+            let session = request
+                .session_id
+                .as_deref()
+                .filter(|session| !session.trim().is_empty())
+                .unwrap_or("homeserver-assistant");
+            builder = builder.header("x-opencode-session", session);
+        }
+        let response = builder
             .send()
             .await
             .map_err(|error| AgentError::Provider(format!("LLM request failed: {error}")))?;
@@ -216,7 +274,7 @@ impl LlmClient for OpenAiCompatibleClient {
         let body = response.text().await.map_err(|error| {
             AgentError::Provider(format!("failed to read the LLM response: {error}"))
         })?;
-        ensure_success(status)?;
+        ensure_success(status, &body)?;
         parse_openai_response(&body)
     }
 }
@@ -244,24 +302,45 @@ impl LlmClient for AnthropicClient {
         let body = response.text().await.map_err(|error| {
             AgentError::Provider(format!("failed to read the LLM response: {error}"))
         })?;
-        ensure_success(status)?;
+        ensure_success(status, &body)?;
         parse_anthropic_response(&body)
     }
 }
 
-fn ensure_success(status: reqwest::StatusCode) -> AgentResult<()> {
+fn ensure_success(status: reqwest::StatusCode, body: &str) -> AgentResult<()> {
     if status.is_success() {
         return Ok(());
     }
-    // The provider body is intentionally not propagated: it may echo request
-    // data, and secrets must never reach logs or API responses.
+    // Include a short, sanitized excerpt of the provider error so the admin
+    // "test provider" action can explain what is wrong (for example an invalid
+    // model id or a wrong base URL). The request body/API key are never echoed.
+    let detail = body
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let detail = if detail.chars().count() > 400 {
+        format!("{}…", detail.chars().take(400).collect::<String>())
+    } else {
+        detail
+    };
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Err(AgentError::Unauthorized(format!(
-            "the provider rejected the API key (HTTP {status})"
+            "the provider rejected the API key (HTTP {status}){}",
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(": {detail}")
+            }
         )));
     }
     Err(AgentError::Provider(format!(
-        "the provider returned HTTP {status}"
+        "the provider returned HTTP {status}{}",
+        if detail.is_empty() {
+            String::new()
+        } else {
+            format!(": {detail}")
+        }
     )))
 }
 
@@ -673,6 +752,7 @@ mod tests {
     fn request() -> LlmRequest {
         LlmRequest {
             model: "gpt-4.1-mini".to_owned(),
+            session_id: None,
             system: "You are helpful.".to_owned(),
             messages: vec![
                 ChatMessage {
@@ -840,7 +920,41 @@ mod tests {
             "https://llm.example.test/v1"
         );
         assert!(openai_base_url(LlmProviderKind::Custom, None).is_err());
-        assert!(openai_base_url(LlmProviderKind::OpencodeGo, None).is_err());
+        assert_eq!(
+            openai_base_url(LlmProviderKind::OpencodeGo, None).expect("opencode default"),
+            DEFAULT_OPENCODE_GO_BASE_URL
+        );
+        assert_eq!(
+            openai_base_url(
+                LlmProviderKind::OpencodeGo,
+                Some("https://opencode.ai/zen/go")
+            )
+            .expect("opencode v1 suffix"),
+            "https://opencode.ai/zen/go/v1"
+        );
+        assert_eq!(
+            openai_base_url(
+                LlmProviderKind::OpencodeGo,
+                Some("https://opencode.ai/zen/go/v1/chat/completions")
+            )
+            .expect("full endpoint trimmed"),
+            "https://opencode.ai/zen/go/v1"
+        );
+        assert_eq!(
+            normalize_model(
+                LlmProviderKind::OpencodeGo,
+                "opencode-go/deepseek-v4.1-flash"
+            ),
+            "deepseek-v4.1-flash"
+        );
+        assert_eq!(
+            normalize_model(LlmProviderKind::OpencodeGo, "deepseek-v4.1-flash"),
+            "deepseek-v4.1-flash"
+        );
+        assert_eq!(
+            normalize_model(LlmProviderKind::OpenAi, "opencode-go/model"),
+            "opencode-go/model"
+        );
         assert!(openai_base_url(LlmProviderKind::Anthropic, None).is_err());
         assert!(openai_base_url(LlmProviderKind::Custom, Some("not-a-url")).is_err());
         assert_eq!(
@@ -877,7 +991,10 @@ mod tests {
         assert!(matches!(error, AgentError::Provider(_)), "{error:?}");
 
         let opencode = provider(LlmProviderKind::OpencodeGo, None);
-        assert!(factory.create(&opencode, "sk-test").await.is_err());
+        assert!(
+            factory.create(&opencode, "sk-test").await.is_ok(),
+            "opencode-go now has a documented default base URL"
+        );
     }
 
     #[tokio::test]

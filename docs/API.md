@@ -348,6 +348,7 @@ A scan may take a few seconds (mDNS/SSDP timeouts) and returns the merged list.
 | POST | `/agent/providers` | agent.manage |
 | DELETE | `/agent/providers/{id}` | agent.manage |
 | POST | `/agent/providers/{id}/activate` | agent.manage |
+| POST | `/agent/providers/{id}/test` | agent.manage |
 | GET | `/agent/tools` | agent.read |
 | POST | `/agent/chat` | agent.manage |
 | GET/POST | `/agent/workflows` | agent.read / agent.manage |
@@ -359,9 +360,21 @@ Provider upsert:
 {"kind":"deepseek","label":"DeepSeek","model":"deepseek-chat",
  "base_url":null,"api_key":"sk-…","enabled":true}
 ```
-`kind`: `openai`, `anthropic`, `deepseek`, `opencode_go`, `custom` (custom and
-opencode-go require `base_url`). The API key is encrypted in the vault and never
+`kind`: `openai`, `anthropic`, `deepseek`, `opencode_go`, `custom` (`custom`
+requires `base_url`; OpenCode Go defaults to
+`https://opencode.ai/zen/go/v1`). The API key is encrypted in the vault and never
 returned.
+
+**OpenCode Zen Go** expects raw model ids (`deepseek-v4.1-flash`, not
+`opencode-go/deepseek-v4.1-flash`) and a stable per-conversation
+`x-opencode-session` header. The backend normalizes the model/base URL, migrates
+legacy records on read, and sends the header automatically; it also identifies
+itself with a `HomeServerAssistant/<version>` user agent.
+
+`POST /agent/providers/{id}/test` sends a minimal completion with the stored key
+and returns `{"ok":true,"model":"…","reply":"…","error":null}` or
+`{"ok":false,"model":null,"reply":null,"error":"<provider error>"}`. This is the
+fastest way to diagnose an invalid key, model id or base URL.
 
 Chat:
 ```json
@@ -430,6 +443,7 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 | POST | `/kiosk/scenes/{entity_id}/activate` | HA `scene.turn_on` |
 | POST | `/kiosk/recognize` | `{embedding:[…],threshold?}` → local cosine match + profile activation |
 | POST | `/kiosk/wake` | `{transcript,confidence?}` → local wake-word match (see Voice) |
+| POST | `/kiosk/voice/heartbeat` | local listener heartbeat (portal shows whether the microphone helper is connected) |
 | WS | `/kiosk/ws` (alias `/kiosk/events`) | snapshot then `KioskEvent` stream |
 
 `KioskEvent` (tagged by `type`):
@@ -468,8 +482,11 @@ instances.
 sensitivity (`0..=1`), window (`3..=60` s) and language (`es`/`en`).
 
 The always-on listener is an optional local helper (`voice/wakeword.py`) that
-runs local STT and posts transcripts to `POST /kiosk/wake`; only transcripts ever
-leave the microphone process. A `200` response:
+runs local STT, posts a heartbeat to `POST /kiosk/voice/heartbeat` every 15 s and
+posts transcripts to `POST /kiosk/wake`; only text ever leaves the microphone
+process. `status.listener_connected` tells the portal whether that helper is
+actually running (heartbeat younger than 45 s), so an enabled wake word with no
+listener is visible instead of silently doing nothing. A `200` response:
 ```json
 {"activated":true,"assistant_name":"Aura","listening":true,
  "trailing_query":"enciende la luz","reason":"activated"}
@@ -511,4 +528,6 @@ Message types: `metrics` (`overview`), `instance` (`name`,`status`),
 | 502 | Upstream failure (LLM, Home Assistant) |
 | 503 | Provider unavailable (Incus, Home Assistant not configured) |
 | 504 | Runtime operation timeout |
+
+
 

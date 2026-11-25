@@ -29,7 +29,7 @@ export const BASE_URL_PLACEHOLDERS: Record<LlmProviderKind, string> = {
   openai: 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com',
   deepseek: 'https://api.deepseek.com/v1',
-  opencode_go: 'https://opencode.example.com/v1',
+  opencode_go: 'https://opencode.ai/zen/go/v1',
   custom: 'https://llm.example.com/v1',
 };
 
@@ -37,6 +37,6 @@ export const MODEL_PLACEHOLDERS: Record<LlmProviderKind, string> = {
   openai: 'gpt-4.1-mini',
   anthropic: 'claude-sonnet-4',
   deepseek: 'deepseek-chat',
-  opencode_go: 'opencode-go/assistant',
+  opencode_go: 'deepseek-v4.1-flash',
   custom: 'my-model',
 };

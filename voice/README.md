@@ -20,7 +20,9 @@ microphone ──► faster-whisper (local STT) ──► POST /api/v1/kiosk/wak
 ```
 
 Only local HTTP requests are made: `http://127.0.0.1:3000/api/v1/kiosk/*`,
-authenticated with the kiosk token from `/var/lib/homecore/config.json`.
+authenticated with the kiosk token from `/var/lib/homecore/config.json`. The
+helper also posts a heartbeat every 15 s so the portal can show whether the
+microphone listener is connected.
 
 ## Requirements
 
@@ -97,3 +99,4 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+

@@ -31,6 +31,9 @@ infrastructure and ISO pipeline.
   DoH/DoT/plain capabilities; AdGuard Home and Technitium config rendering,
   nftables ruleset with DMZ isolation and NAT egress, netplan bridge rendering,
   interface detection.
+- **Provider diagnostics** — OpenCode Zen Go base/model normalization, required
+  `x-opencode-session` routing header and a provider connectivity test endpoint
+  with real error details in the portal.
 - **Voice assistant** — always-on local wake word with customizable name,
   sensitivity and listening window; local STT helper (`voice/wakeword.py`),
   transcript-only wake endpoint, kiosk wake event and portal configuration.
@@ -70,4 +73,5 @@ infrastructure and ISO pipeline.
   documented backups.
 
 [0.1.0]: https://example.invalid/homeserver-assistant/releases/tag/v0.1.0
+
 

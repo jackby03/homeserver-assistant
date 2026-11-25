@@ -516,12 +516,18 @@ const es = {
   'agent.voice.status.disabled': 'Escucha por nombre desactivada',
   'agent.voice.activations': '{{count}} activaciones desde el arranque',
   'agent.voice.localOnly': 'El audio y las transcripciones no salen del appliance.',
+  'agent.voice.listenerConnected': 'Micrófono local conectado',
+  'agent.voice.listenerDisconnected':
+    'El wake word está activo pero el listener de micrófono local no está conectado. Arranca voice/wakeword.py para hablarle.',
   'agent.providers.title': 'Proveedores de IA',
   'agent.providers.subtitle': 'El asistente usa el proveedor activo para conversar y llamar herramientas.',
   'agent.providers.add': 'Añadir proveedor',
   'agent.providers.empty': 'Aún no hay proveedores configurados.',
   'agent.providers.active': 'Activo',
   'agent.providers.activate': 'Activar',
+  'agent.providers.test': 'Probar',
+  'agent.providers.testOk': 'El proveedor responde',
+  'agent.providers.testFailed': 'El proveedor falló',
   'agent.providers.activating': 'Activando…',
   'agent.providers.delete': 'Eliminar proveedor',
   'agent.providers.confirmDelete.title': 'Eliminar {{name}}',
@@ -543,7 +549,8 @@ const es = {
   'agent.kindHint.openai': 'api.openai.com · modelos GPT',
   'agent.kindHint.anthropic': 'Claude · API Messages',
   'agent.kindHint.deepseek': 'deepseek.com · compatible OpenAI',
-  'agent.kindHint.opencode_go': 'Gateway opencode-go · base URL propia',
+  'agent.kindHint.opencode_go':
+    'OpenCode Zen Go · base https://opencode.ai/zen/go/v1 · modelo sin prefijo (p. ej. deepseek-v4.1-flash)',
   'agent.kindHint.custom': 'Cualquier endpoint compatible con OpenAI',
   'agent.tools.title': 'Herramientas',
   'agent.tools.subtitle': 'Todo lo que el asistente puede hacer, con permisos por perfil.',
@@ -747,6 +754,7 @@ const es = {
   'kiosk.clockDate': '{{date}}',
   'kiosk.idleHint': 'Toca la pantalla para continuar',
   'kiosk.pressToWake': 'Toca o di «{{name}}»',
+  'kiosk.listenerOffline': 'Micrófono local desconectado',
   'kiosk.activatedProfile': 'Hola, {{name}}',
   'kiosk.profileSwitchHint': 'Identidad activa',
 
@@ -1398,12 +1406,18 @@ const en: Dictionary = {
   'agent.voice.status.disabled': 'Name wake word disabled',
   'agent.voice.activations': '{{count}} activations since boot',
   'agent.voice.localOnly': 'Audio and transcripts never leave the appliance.',
+  'agent.voice.listenerConnected': 'Local microphone connected',
+  'agent.voice.listenerDisconnected':
+    'The wake word is enabled but the local microphone listener is not connected. Start voice/wakeword.py to talk to it.',
   'agent.providers.title': 'AI providers',
   'agent.providers.subtitle': 'The assistant uses the active provider to chat and call tools.',
   'agent.providers.add': 'Add provider',
   'agent.providers.empty': 'No providers configured yet.',
   'agent.providers.active': 'Active',
   'agent.providers.activate': 'Activate',
+  'agent.providers.test': 'Test',
+  'agent.providers.testOk': 'Provider is responding',
+  'agent.providers.testFailed': 'Provider failed',
   'agent.providers.activating': 'Activating…',
   'agent.providers.delete': 'Delete provider',
   'agent.providers.confirmDelete.title': 'Delete {{name}}',
@@ -1425,7 +1439,8 @@ const en: Dictionary = {
   'agent.kindHint.openai': 'api.openai.com · GPT models',
   'agent.kindHint.anthropic': 'Claude · Messages API',
   'agent.kindHint.deepseek': 'deepseek.com · OpenAI-compatible',
-  'agent.kindHint.opencode_go': 'opencode-go gateway · custom base URL',
+  'agent.kindHint.opencode_go':
+    'OpenCode Zen Go · base https://opencode.ai/zen/go/v1 · raw model id (e.g. deepseek-v4.1-flash)',
   'agent.kindHint.custom': 'Any OpenAI-compatible endpoint',
   'agent.tools.title': 'Tools',
   'agent.tools.subtitle': 'Everything the assistant can do, with per-profile permissions.',
@@ -1625,6 +1640,7 @@ const en: Dictionary = {
   'kiosk.clockDate': '{{date}}',
   'kiosk.idleHint': 'Touch the screen to continue',
   'kiosk.pressToWake': 'Touch or say “{{name}}”',
+  'kiosk.listenerOffline': 'Local microphone disconnected',
   'kiosk.activatedProfile': 'Hi, {{name}}',
   'kiosk.profileSwitchHint': 'Active identity',
 
@@ -1794,3 +1810,4 @@ export function interpolate(template: string, vars?: Record<string, string | num
   const withDouble = replace(template, /\{\{(\w+)\}\}/g);
   return replace(withDouble, /\{(\w+)\}/g);
 }
+
