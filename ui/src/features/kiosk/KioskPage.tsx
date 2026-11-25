@@ -391,6 +391,9 @@ export function KioskPage(): React.JSX.Element {
         case 'network':
           setLive((current) => ({ ...current, network: event.status }));
           break;
+        case 'voice':
+          setAssistantName(event.assistant_name);
+          break;
         case 'wake':
           setAssistantName(event.assistant_name);
           setAvatarState('listening');
@@ -1496,6 +1499,7 @@ function activityToAvatar(activity: AgentActivity): AvatarState {
       return 'idle';
   }
 }
+
 
 
 

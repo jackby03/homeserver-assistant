@@ -143,6 +143,17 @@ pub enum KioskEvent {
         /// Full profile so the kiosk can render the avatar immediately.
         profile: Profile,
     },
+    /// The assistant voice/profile settings changed in the admin console.
+    Voice {
+        /// Configured assistant name (also the wake word).
+        assistant_name: String,
+        /// Whether wake-word listening is enabled.
+        wake_word_enabled: bool,
+        /// Activation mode id (`wake_word`, `push_to_talk`, `both`).
+        activation_mode: String,
+        /// STT/TTS language (`es`, `en`).
+        language: String,
+    },
     /// The household called the assistant by its wake word.
     Wake {
         /// Configured assistant name (`Aura`).

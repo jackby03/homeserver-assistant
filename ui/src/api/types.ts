@@ -833,6 +833,13 @@ export type KioskEvent =
   | { type: 'avatar'; state: AvatarState; profile_id: Uuid | null }
   | { type: 'tracking'; point: TrackingPoint | null }
   | { type: 'profile_activated'; profile: Profile }
+  | {
+      type: 'voice';
+      assistant_name: string;
+      wake_word_enabled: boolean;
+      activation_mode: 'wake_word' | 'push_to_talk' | 'both';
+      language: string;
+    }
   | { type: 'wake'; assistant_name: string; trailing_query: string | null }
   | { type: 'speech'; text: string }
   | { type: 'music'; state: MusicState }
@@ -872,6 +879,7 @@ export function isKioskEvent(value: unknown): value is KioskEvent {
     'avatar',
     'tracking',
     'profile_activated',
+    'voice',
     'wake',
     'music',
     'agent',
@@ -879,4 +887,7 @@ export function isKioskEvent(value: unknown): value is KioskEvent {
     'notification',
   ].includes(value.type);
 }
+
+
+
 

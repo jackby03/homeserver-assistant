@@ -6,6 +6,7 @@
 
 use std::sync::RwLock;
 
+use hs_core::config::VoiceConfig;
 use hs_core::events::{
     AgentActivity, AvatarState, KioskEvent, MusicState, NetworkStatus, NotificationLevel,
     TrackingPoint,
@@ -200,6 +201,16 @@ impl KioskManager {
         self.bus.publish_kiosk(KioskEvent::Notification {
             level,
             message: message.into(),
+        });
+    }
+
+    /// Notify the kiosk that the assistant name/voice settings changed.
+    pub fn voice_updated(&self, config: &VoiceConfig) {
+        self.bus.publish_kiosk(KioskEvent::Voice {
+            assistant_name: config.assistant_name.clone(),
+            wake_word_enabled: config.wake_word_enabled,
+            activation_mode: config.activation_mode.id().to_owned(),
+            language: config.language.clone(),
         });
     }
 
