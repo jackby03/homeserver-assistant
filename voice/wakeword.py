@@ -142,11 +142,31 @@ def print_input_devices() -> None:
 
 
 def downsample_to_target(audio: np.ndarray) -> np.ndarray:
-    """48 kHz device capture -> 16 kHz for Silero VAD and Whisper."""
+    """Quick 48 kHz -> 16 kHz average, used only for VAD/energy gating."""
     usable = (audio.size // DECIMATION) * DECIMATION
     if usable == 0:
         return audio.astype(np.float32)
     return audio[:usable].reshape(-1, DECIMATION).mean(axis=1).astype(np.float32)
+
+
+def _anti_alias_taps() -> np.ndarray:
+    cutoff = 7_200.0
+    count = 63
+    positions = np.arange(count, dtype=np.float64) - (count - 1) / 2.0
+    ratio = 2.0 * cutoff / CAPTURE_RATE
+    taps = ratio * np.sinc(ratio * positions) * np.hamming(count)
+    return (taps / taps.sum()).astype(np.float64)
+
+
+ANTI_ALIAS_TAPS = _anti_alias_taps()
+
+
+def finalize_capture(audio_48k: np.ndarray) -> np.ndarray:
+    """Anti-alias low-pass at 48 kHz, then decimate 3:1 to 16 kHz."""
+    filtered = np.convolve(
+        audio_48k.astype(np.float64), ANTI_ALIAS_TAPS, mode="same"
+    )
+    return filtered[::DECIMATION].astype(np.float32)
 
 
 def sample_level(device: int, seconds: float = 0.5) -> float | None:
@@ -289,7 +309,7 @@ def record_window(seconds: float, device: str | int | None) -> np.ndarray:
         device=device,
     )
     sd.wait()
-    return downsample_to_target(audio.flatten())
+    return finalize_capture(audio.flatten())
 
 
 def enhance_audio(audio: np.ndarray) -> np.ndarray:
@@ -405,7 +425,8 @@ def record_utterance(
             device=device,
         )
         sd.wait()
-        mono = downsample_to_target(block.flatten())
+        raw = block.flatten()
+        mono = downsample_to_target(raw)
         level = rms(mono)
         peak = max(peak, level)
         probability = None
@@ -423,7 +444,7 @@ def record_utterance(
             level < energy_gate
         )
         if not speech_started:
-            pre.append(mono)
+            pre.append(raw)
             if len(pre) > preroll_frames:
                 pre.pop(0)
             if is_speech:
@@ -434,7 +455,7 @@ def record_utterance(
                     else f"rms={level:.5f}"
                 )
                 print(f"[wakeword] speech detected ({detail})")
-                utterance = [*pre, mono]
+                utterance = [*pre, raw]
                 pre.clear()
                 speech_time = chunk
                 quiet = 0.0
@@ -445,16 +466,16 @@ def record_utterance(
                 )
                 return None
             continue
-        utterance.append(mono)
+        utterance.append(raw)
         if quiet_frame:
             quiet += chunk
         else:
             quiet = 0.0
             speech_time += chunk
         if quiet >= silence and speech_time >= 0.3:
-            return np.concatenate(utterance)
+            return finalize_capture(np.concatenate(utterance))
         if len(utterance) * chunk >= WAKE_MAX_SECONDS:
-            return np.concatenate(utterance)
+            return finalize_capture(np.concatenate(utterance))
 
 
 def record_until_silence(
@@ -482,8 +503,9 @@ def record_until_silence(
             device=device,
         )
         sd.wait()
-        mono = downsample_to_target(block.flatten())
-        blocks.append(mono.copy())
+        raw = block.flatten()
+        mono = downsample_to_target(raw)
+        blocks.append(raw.copy())
         if rms(mono) < threshold:
             if speech_started:
                 silent_for += chunk
@@ -494,7 +516,9 @@ def record_until_silence(
         else:
             speech_started = True
             silent_for = 0.0
-    return np.concatenate(blocks) if blocks else np.zeros(0, dtype="float32")
+    if blocks:
+        return finalize_capture(np.concatenate(blocks))
+    return np.zeros(0, dtype="float32")
 
 
 def normalize_audio(audio: np.ndarray) -> np.ndarray:
