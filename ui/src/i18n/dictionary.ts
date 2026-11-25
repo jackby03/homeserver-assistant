@@ -1714,10 +1714,21 @@ const en: Dictionary = {
 export const dictionaries: Record<UiLanguage, Dictionary> = { es, en };
 
 /** Interpolate `{name}` placeholders in a dictionary string. */
+/**
+ * Replace `{{variable}}` placeholders in a localized template.
+ *
+ * Dictionary entries use double braces. Single-brace placeholders are also
+ * accepted for backwards compatibility, so an older template copied into a
+ * plugin keeps working. Unknown variables are left untouched so a missing value
+ * is visible in QA instead of silently disappearing.
+ */
 export function interpolate(template: string, vars?: Record<string, string | number>): string {
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => {
-    const value = vars[key];
-    return value === undefined ? match : String(value);
-  });
+  const replace = (source: string, pattern: RegExp): string =>
+    source.replace(pattern, (match, key: string) => {
+      const value = vars[key];
+      return value === undefined ? match : String(value);
+    });
+  const withDouble = replace(template, /\{\{(\w+)\}\}/g);
+  return replace(withDouble, /\{(\w+)\}/g);
 }

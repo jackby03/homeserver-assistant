@@ -400,7 +400,7 @@ The kiosk page sets an HttpOnly `hs_kiosk` cookie. API clients may send
 | POST | `/kiosk/music/volume` | `{volume}` 0–100 (PipeWire) |
 | POST | `/kiosk/scenes/{entity_id}/activate` | HA `scene.turn_on` |
 | POST | `/kiosk/recognize` | `{embedding:[…],threshold?}` → local cosine match + profile activation |
-| WS | `/kiosk/ws` | snapshot then `KioskEvent` stream |
+| WS | `/kiosk/ws` (alias `/kiosk/events`) | snapshot then `KioskEvent` stream |
 
 `KioskEvent` (tagged by `type`):
 ```json

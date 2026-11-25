@@ -109,6 +109,8 @@ pub fn router(state: SharedState) -> Router {
         .route("/kiosk/scenes/{entity_id}/activate", post(activate_scene))
         .route("/kiosk/recognize", post(recognize_face))
         .route("/kiosk/ws", get(kiosk_ws))
+        // Alias kept for the UI client (`ReconnectingSocket('/kiosk/events')`).
+        .route("/kiosk/events", get(kiosk_ws))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             require_kiosk_token,
