@@ -734,6 +734,16 @@ const es = {
   'kiosk.agent.error': 'No pude completar eso',
   'kiosk.talk': 'Hablar',
   'kiosk.talking': 'Escuchando…',
+  'kiosk.micNeeded': 'Para hablar necesito permiso para usar tu micrófono.',
+  'kiosk.enableMic': 'Permitir micrófono',
+  'kiosk.micRetry': 'Reintentar permiso',
+  'kiosk.micDenied': 'Chrome bloqueó el micrófono para este sitio.',
+  'kiosk.micDeniedHint':
+    'Pulsa el candado junto a la URL → Configuración del sitio → Micrófono → Permitir, y recarga. También puedes abrir chrome://settings/content/microphone.',
+  'kiosk.micNotFound': 'No se encontró ningún micrófono conectado.',
+  'kiosk.micError': 'No se pudo acceder al micrófono.',
+  'kiosk.micUnsupported':
+    'Este navegador o contexto no permite micrófono. Abre el kiosko en http://127.0.0.1:3000 con Chrome.',
   'kiosk.record': 'Grabar voz',
   'kiosk.stopRecording': 'Detener grabación',
   'kiosk.recordHint': 'Pulsa y habla; se detiene a los 8 s o al pulsar de nuevo.',
@@ -1632,6 +1642,16 @@ const en: Dictionary = {
   'kiosk.agent.error': 'I could not complete that',
   'kiosk.talk': 'Talk',
   'kiosk.talking': 'Listening…',
+  'kiosk.micNeeded': 'I need permission to use your microphone to listen.',
+  'kiosk.enableMic': 'Allow microphone',
+  'kiosk.micRetry': 'Retry permission',
+  'kiosk.micDenied': 'Chrome blocked the microphone for this site.',
+  'kiosk.micDeniedHint':
+    'Click the lock next to the URL → Site settings → Microphone → Allow, then reload. You can also open chrome://settings/content/microphone.',
+  'kiosk.micNotFound': 'No microphone was found.',
+  'kiosk.micError': 'Could not access the microphone.',
+  'kiosk.micUnsupported':
+    'This browser/context does not allow microphone access. Open the kiosk at http://127.0.0.1:3000 with Chrome.',
   'kiosk.record': 'Record voice',
   'kiosk.stopRecording': 'Stop recording',
   'kiosk.recordHint': 'Tap and speak; stops after 8 s or on tap again.',
