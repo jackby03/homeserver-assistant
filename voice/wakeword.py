@@ -748,6 +748,11 @@ def main() -> int:
     )
     parser.add_argument("--once", action="store_true", help="process a single window and exit")
     parser.add_argument(
+        "--dump-audio",
+        default="",
+        help="write the last captured utterance to this WAV for diagnostics",
+    )
+    parser.add_argument(
         "--tts-command",
         default="",
         help="optional local TTS command reading text on stdin (e.g. piper --model ...)",
@@ -871,6 +876,24 @@ def main() -> int:
                 return 0
             continue
         silent_windows = 0
+        if args.dump_audio:
+            try:
+                import wave as wave_writer
+
+                with wave_writer.open(args.dump_audio, "wb") as handle:
+                    handle.setnchannels(1)
+                    handle.setsampwidth(2)
+                    handle.setframerate(SAMPLE_RATE)
+                    pcm = np.clip(window, -1.0, 1.0)
+                    handle.writeframes(
+                        (pcm * 32767).astype(np.int16).tobytes()
+                    )
+                print(
+                    f"[wakeword] captured {len(window) / SAMPLE_RATE:.2f}s "
+                    f"to {args.dump_audio}"
+                )
+            except Exception as error:
+                print(f"[wakeword] dump failed: {error}", file=sys.stderr)
         started = time.monotonic()
         transcript = transcribe(
             model,
@@ -1009,6 +1032,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
