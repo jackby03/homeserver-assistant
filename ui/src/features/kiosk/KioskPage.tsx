@@ -139,6 +139,7 @@ export function KioskPage(): React.JSX.Element {
   const [avatarState, setAvatarState] = useState<AvatarState>('idle');
   const [tracking, setTracking] = useState<TrackingPoint | null>(null);
   const [wsStatus, setWsStatus] = useState<SocketStatus>(isDemo ? 'open' : 'connecting');
+  const [httpOnline, setHttpOnline] = useState(isDemo);
   const [volume, setVolume] = useState(initial?.music.volume ?? 60);
   const [busy, setBusy] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>(isDemo ? DEMO_PROFILES : []);
@@ -367,18 +368,42 @@ export function KioskPage(): React.JSX.Element {
     if (isDemo) return;
     void kioskApi
       .state()
-      .then((snapshot) => applySnapshot(snapshot))
-      .catch(() => undefined);
+      .then((snapshot) => {
+        setHttpOnline(true);
+        applySnapshot(snapshot);
+      })
+      .catch(() => {
+        setHttpOnline(false);
+      });
   }, [isDemo, applySnapshot]);
 
   useEffect(() => {
-    if (isDemo) return;
+    if (isDemo) return undefined;
     reloadState();
+    // HTTP polling is a fallback when the WebSocket is blocked or stale; it
+    // keeps the profile, clock and weather usable even without live events.
     const timer = window.setInterval(() => {
-      if (Date.now() - lastEventAt.current > 20_000) reloadState();
-    }, 15_000);
+      if (wsStatus !== 'open' || Date.now() - lastEventAt.current > 20_000) {
+        reloadState();
+      }
+    }, 5_000);
     return () => window.clearInterval(timer);
-  }, [isDemo, reloadState]);
+  }, [isDemo, reloadState, wsStatus]);
+
+  useEffect(() => {
+    if (isDemo || wsStatus === 'open' || httpOnline) return undefined;
+    // A fully stale tab (daemon restarted while the page was open) reloads at
+    // most once a minute after 30 s without any transport.
+    const timer = window.setTimeout(() => {
+      const key = 'hs.kioskLastRecoveryReload';
+      const last = Number(window.sessionStorage.getItem(key) ?? 0);
+      if (Date.now() - last >= 60_000) {
+        window.sessionStorage.setItem(key, String(Date.now()));
+        window.location.reload();
+      }
+    }, 30_000);
+    return () => window.clearTimeout(timer);
+  }, [isDemo, wsStatus, httpOnline]);
 
   useEffect(() => {
     if (isDemo) return;
@@ -893,7 +918,7 @@ export function KioskPage(): React.JSX.Element {
     return live.profile !== null ? [live.profile] : [];
   }, [profiles, live.profile]);
   const agentLabel = t(ACTIVITY_KEYS[live.agentActivity]);
-  const isOnline = isDemo ? true : wsStatus === 'open';
+  const isOnline = isDemo ? true : wsStatus === 'open' || httpOnline;
 
   return (
     <div
@@ -948,7 +973,7 @@ export function KioskPage(): React.JSX.Element {
               tone={live.network.online ? 'success' : 'danger'}
             />
           </div>
-          {!isDemo && wsStatus !== 'open' ? (
+          {!isDemo && !isOnline ? (
             <p className="text-[10px] text-ink-600">{t('kiosk.ws.reconnecting')}</p>
           ) : null}
         </div>
@@ -1221,7 +1246,7 @@ export function KioskPage(): React.JSX.Element {
             <AudioLines size={14} className="text-ink-500" />
             {agentLabel}
           </span>
-          {!isDemo && wsStatus !== 'open' ? (
+          {!isDemo && !isOnline ? (
             <span className="hidden items-center gap-1.5 text-[11px] text-amber-300/80 sm:flex">
               <CloudOff size={12} />
               {t('kiosk.ws.offline')}
@@ -1551,7 +1576,7 @@ export function KioskPage(): React.JSX.Element {
       ) : null}
 
       {/* Offline retry ------------------------------------------------------- */}
-      {!isDemo && live.profile === null && wsStatus !== 'open' ? (
+      {!isDemo && live.profile === null && !isOnline ? (
         <div className="pointer-events-none absolute inset-x-0 top-24 z-30 flex justify-center">
           <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.08] px-4 py-2.5 backdrop-blur-md">
             <CloudOff size={15} className="text-amber-300" />
@@ -1606,6 +1631,7 @@ function activityToAvatar(activity: AgentActivity): AvatarState {
       return 'idle';
   }
 }
+
 
 
 
