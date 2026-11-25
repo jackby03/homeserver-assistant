@@ -29,6 +29,7 @@ export function AgentPage(): React.JSX.Element {
   const [deleteTarget, setDeleteTarget] = useState<ProviderRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   const providers = useResource(() => agentApi.providers(), [refreshToken]);
   const tools = useResource(() => agentApi.tools(), [refreshToken]);
@@ -50,6 +51,30 @@ export function AgentPage(): React.JSX.Element {
       toast.push({ level: 'error', title: t('toast.error'), message: t(errorMessageKey(cause)) });
     } finally {
       setActivatingId(null);
+    }
+  };
+
+  const testProvider = async (provider: ProviderRecord): Promise<void> => {
+    setTestingId(provider.id);
+    try {
+      const result = await agentApi.testProvider(provider.id);
+      if (result.ok) {
+        toast.push({
+          level: 'success',
+          title: t('agent.providers.testOk'),
+          message: `${result.model ?? provider.model}: ${result.reply ?? ''}`,
+        });
+      } else {
+        toast.push({
+          level: 'error',
+          title: t('agent.providers.testFailed'),
+          message: result.error ?? t('errors.generic'),
+        });
+      }
+    } catch (cause) {
+      toast.push({ level: 'error', title: t('toast.error'), message: t(errorMessageKey(cause)) });
+    } finally {
+      setTestingId(null);
     }
   };
 
@@ -181,15 +206,27 @@ export function AgentPage(): React.JSX.Element {
                   </div>
 
                   <div className="relative mt-4 flex items-center justify-between gap-2 border-t border-white/[0.05] pt-3">
-                    <button
-                      type="button"
-                      className={cn('btn btn-sm', isActive ? 'btn-secondary' : 'btn-primary')}
-                      onClick={() => void activate(provider)}
-                      disabled={isActive || activatingId !== null}
-                    >
-                      {activatingId === provider.id ? <Spinner size={13} className="text-[#04121a]" /> : null}
-                      {t('agent.providers.activate')}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => void testProvider(provider)}
+                        disabled={testingId !== null}
+                        title={t('agent.providers.test')}
+                      >
+                        {testingId === provider.id ? <Spinner size={13} /> : <Zap size={13} />}
+                        {t('agent.providers.test')}
+                      </button>
+                      <button
+                        type="button"
+                        className={cn('btn btn-sm', isActive ? 'btn-secondary' : 'btn-primary')}
+                        onClick={() => void activate(provider)}
+                        disabled={isActive || activatingId !== null}
+                      >
+                        {activatingId === provider.id ? <Spinner size={13} className="text-[#04121a]" /> : null}
+                        {t('agent.providers.activate')}
+                      </button>
+                    </div>
                     <button
                       type="button"
                       className="btn btn-ghost btn-icon text-ink-500 hover:bg-coral-500/10 hover:text-coral-300"

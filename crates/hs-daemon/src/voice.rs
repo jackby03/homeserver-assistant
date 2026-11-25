@@ -40,6 +40,8 @@ pub struct VoiceStatus {
     pub last_activation: Option<DateTime<Utc>>,
     /// Number of wake activations since process start.
     pub activations: u64,
+    /// Whether the local microphone listener reported a heartbeat recently.
+    pub listener_connected: bool,
 }
 
 /// Result of feeding a local transcript into the wake-word gate.
@@ -64,6 +66,7 @@ struct VoiceRuntime {
     last_activation_instant: Option<Instant>,
     last_activation: Option<DateTime<Utc>>,
     activations: u64,
+    last_listener_heartbeat: Option<Instant>,
 }
 
 /// Wake-word gate and listening-window state machine.
@@ -86,6 +89,7 @@ impl VoiceManager {
                 last_activation_instant: None,
                 last_activation: None,
                 activations: 0,
+                last_listener_heartbeat: None,
             }),
         }
     }
@@ -110,7 +114,23 @@ impl VoiceManager {
                 .is_some_and(|until| until > Instant::now()),
             last_activation: runtime.last_activation,
             activations: runtime.activations,
+            listener_connected: runtime
+                .last_listener_heartbeat
+                .is_some_and(|at| at.elapsed() < Duration::from_secs(45)),
         }
+    }
+
+    /// Record a heartbeat from the local microphone listener.
+    pub fn listener_heartbeat(&self) {
+        self.write().last_listener_heartbeat = Some(Instant::now());
+    }
+
+    /// Whether the local microphone listener is connected (heartbeat < 45 s).
+    #[must_use]
+    pub fn listener_connected(&self) -> bool {
+        self.read()
+            .last_listener_heartbeat
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(45))
     }
 
     /// Whether the assistant is inside the post-wake listening window.
@@ -305,6 +325,16 @@ mod tests {
         voice.begin_query();
         assert!(!voice.is_listening());
         assert!(!voice.status().listening);
+    }
+
+    #[test]
+    fn listener_heartbeat_is_reported_in_status() {
+        let (manager, _kiosk, _config, _dir) = manager("Aura");
+        assert!(!manager.listener_connected());
+        assert!(!manager.status().listener_connected);
+        manager.listener_heartbeat();
+        assert!(manager.listener_connected());
+        assert!(manager.status().listener_connected);
     }
 
     #[test]

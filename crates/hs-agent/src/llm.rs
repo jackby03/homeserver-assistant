@@ -38,6 +38,10 @@ pub struct LlmRequest {
     pub temperature: f32,
     /// Maximum number of tokens to generate.
     pub max_tokens: u32,
+    /// Stable per-conversation id for gateways that require session affinity
+    /// (OpenCode Zen Go sends it as `x-opencode-session`). `None` for providers
+    /// that do not use it.
+    pub session_id: Option<String>,
 }
 
 /// One completion response returned by a provider.

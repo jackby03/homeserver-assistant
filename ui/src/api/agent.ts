@@ -4,6 +4,7 @@ import type {
   AgentChatResponse,
   CreateProviderRequest,
   ProviderRecord,
+  ProviderTestResult,
   ProvidersResponse,
   ToolDefinition,
   ToolsResponse,
@@ -21,6 +22,9 @@ export const agentApi = {
 
   createProvider: (payload: CreateProviderRequest): Promise<ProviderRecord> =>
     http.post<ProviderRecord>('/agent/providers', payload),
+
+  testProvider: (id: string): Promise<ProviderTestResult> =>
+    http.post<ProviderTestResult>(`/agent/providers/${encodeURIComponent(id)}/test`),
 
   deleteProvider: (id: string): Promise<void> =>
     http.delete<void>(`/agent/providers/${encodeURIComponent(id)}`),

@@ -117,6 +117,9 @@ export function KioskPage(): React.JSX.Element {
     agentActivity: initial?.agent_activity ?? 'idle',
   });
   const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Aura');
+  const [listenerConnected, setListenerConnected] = useState(
+    initial?.voice.listener_connected ?? false,
+  );
   const [avatarState, setAvatarState] = useState<AvatarState>('idle');
   const [tracking, setTracking] = useState<TrackingPoint | null>(null);
   const [wsStatus, setWsStatus] = useState<SocketStatus>(isDemo ? 'open' : 'connecting');
@@ -175,6 +178,7 @@ export function KioskPage(): React.JSX.Element {
     });
     setVolume(snapshot.music.volume);
     setAssistantName(snapshot.assistant_name);
+    setListenerConnected(snapshot.voice.listener_connected);
   }, []);
 
   const reloadState = useCallback(() => {
@@ -510,6 +514,11 @@ export function KioskPage(): React.JSX.Element {
                     ? t('kiosk.speaking')
                     : t('kiosk.hint', { name: assistantName })}
             </p>
+            {!listenerConnected && !isDemo ? (
+              <p className="mt-2 text-[11px] text-amber-300/80">
+                {t('kiosk.listenerOffline')}
+              </p>
+            ) : null}
           </div>
         </section>
 

@@ -29,7 +29,16 @@ use uuid::Uuid;
 use crate::error::{AgentError, AgentResult};
 use crate::llm::{LlmClientFactory, LlmRequest, LlmToolSpec};
 use crate::prompt::build_system_prompt;
-use crate::providers::{provider_secret_name, DEFAULT_MAX_TOKENS};
+use crate::providers::{normalize_model, provider_secret_name, DEFAULT_MAX_TOKENS};
+
+/// Result of a provider connectivity test.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderTest {
+    /// Normalized model id that was actually sent to the provider.
+    pub model: String,
+    /// Model reply (small connectivity prompt).
+    pub reply: String,
+}
 
 /// Maximum number of characters of a tool output forwarded to the model.
 const MAX_TOOL_OUTPUT_CHARS: usize = 4000;
@@ -61,6 +70,27 @@ pub struct UpsertProviderRequest {
 
 fn default_enabled() -> bool {
     true
+}
+
+/// Stable per-conversation id for providers with session-affinity requirements.
+///
+/// The chat API is stateless, so the id is derived from the profile id and the
+/// first user message (the frontend resends history each turn). This keeps every
+/// turn of the same conversation on the same gateway route without persisting
+/// conversations server-side.
+fn conversation_session_id(profile_id: Uuid, messages: &[ChatMessage]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis.
+    for byte in profile_id.as_bytes().iter().chain(
+        messages
+            .iter()
+            .find(|message| message.role == ChatRole::User)
+            .map(|message| message.content.as_bytes())
+            .unwrap_or(profile_id.to_string().as_bytes()),
+    ) {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("hs-{profile_id}-{hash:016x}")
 }
 
 /// Agent service: provider CRUD and the tool-calling chat loop.
@@ -126,6 +156,20 @@ impl AgentService {
     /// Returns [`AgentError::Storage`] when the database cannot be read.
     pub fn list_providers(&self) -> AgentResult<Vec<ProviderRecord>> {
         let mut providers: Vec<ProviderRecord> = self.db.list_providers()?;
+        // Lazily migrate records saved by older builds: OpenCode Go now has a
+        // documented default base URL and expects raw model ids.
+        for record in &mut providers {
+            if record.kind == LlmProviderKind::OpencodeGo {
+                let model = normalize_model(record.kind, &record.model);
+                let base_url =
+                    crate::providers::openai_base_url(record.kind, record.base_url.as_deref()).ok();
+                if record.model != model || record.base_url != base_url {
+                    record.model = model;
+                    record.base_url = base_url;
+                    self.db.save_provider(record)?;
+                }
+            }
+        }
         providers.sort_by(|left, right| {
             left.created_at
                 .cmp(&right.created_at)
@@ -153,7 +197,7 @@ impl AgentService {
         } = request;
 
         let label = normalize_required(&label, "label", 64)?;
-        let model = normalize_required(&model, "model", 128)?;
+        let model = normalize_model(kind, &normalize_required(&model, "model", 128)?);
         let base_url = match base_url {
             Some(url) if url.trim().is_empty() => None,
             Some(url) => {
@@ -163,14 +207,20 @@ impl AgentService {
             }
             None => None,
         };
-        if matches!(kind, LlmProviderKind::Custom | LlmProviderKind::OpencodeGo)
-            && base_url.is_none()
-        {
-            return Err(AgentError::InvalidRequest(format!(
-                "the `{}` provider requires a base URL",
-                kind.id()
-            )));
+        if kind == LlmProviderKind::Custom && base_url.is_none() {
+            return Err(AgentError::InvalidRequest(
+                "the `custom` provider requires a base URL".to_owned(),
+            ));
         }
+        // Normalize the base URL (OpenCode Go gets its documented `/v1` suffix
+        // and a pasted full endpoint is trimmed).
+        let base_url = match kind {
+            LlmProviderKind::OpencodeGo => Some(crate::providers::openai_base_url(
+                kind,
+                base_url.as_deref(),
+            )?),
+            _ => base_url,
+        };
         let api_key = match api_key {
             Some(key) => {
                 let key = key.trim();
@@ -275,6 +325,55 @@ impl AgentService {
         *self.active_provider.read().await
     }
 
+    /// Test a configured provider with a minimal completion request.
+    ///
+    /// Used by the admin portal to surface the real provider error (invalid
+    /// model id, wrong base URL, rejected key) instead of a generic failure.
+    ///
+    /// # Errors
+    /// Returns [`AgentError`] when the provider is missing, disabled, has no
+    /// API key, or the provider request fails.
+    pub async fn test_provider(&self, id: Uuid) -> AgentResult<ProviderTest> {
+        let provider = self
+            .db
+            .provider(id)?
+            .ok_or_else(|| AgentError::InvalidRequest("provider not found".to_owned()))?;
+        if !provider.enabled {
+            return Err(AgentError::InvalidRequest(
+                "the provider is disabled; enable it before testing".to_owned(),
+            ));
+        }
+        let api_key = self.secrets.get(&provider.api_key_secret)?.ok_or_else(|| {
+            AgentError::Provider(format!(
+                "provider `{}` has no API key stored",
+                provider.label
+            ))
+        })?;
+        let client = self.factory.create(&provider, &api_key).await?;
+        let model = normalize_model(provider.kind, &provider.model);
+        let request = LlmRequest {
+            model: model.clone(),
+            system: "You are a connectivity test. Reply with the single word OK.".to_owned(),
+            messages: vec![ChatMessage {
+                role: ChatRole::User,
+                content: "ping".to_owned(),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
+            }],
+            tools: Vec::new(),
+            temperature: 0.0,
+            max_tokens: 16,
+            session_id: Some(format!("provider-test-{id}")),
+        };
+        let response = client.complete(request).await?;
+        Ok(ProviderTest {
+            model,
+            reply: response
+                .content
+                .unwrap_or_else(|| "(empty reply)".to_owned()),
+        })
+    }
+
     /// Run one agent turn: call the model, execute its tool calls and repeat
     /// until it produces a final answer.
     ///
@@ -304,6 +403,7 @@ impl AgentService {
         let system = build_system_prompt(&profile);
 
         let mut messages = request.messages;
+        let session_id = conversation_session_id(request.profile_id, &messages);
         let mut tool_trace: Vec<ToolTraceEntry> = Vec::new();
         let mut usage = TokenUsage::default();
         let mut model = provider.model.clone();
@@ -319,12 +419,13 @@ impl AgentService {
             step += 1;
 
             let llm_request = LlmRequest {
-                model: provider.model.clone(),
+                model: normalize_model(provider.kind, &provider.model),
                 system: system.clone(),
                 messages: messages.clone(),
                 tools: tools.clone(),
                 temperature: self.temperature,
                 max_tokens: DEFAULT_MAX_TOKENS,
+                session_id: Some(session_id.clone()),
             };
             let response = client.complete(llm_request).await?;
             usage.prompt_tokens += response.usage.prompt_tokens;
