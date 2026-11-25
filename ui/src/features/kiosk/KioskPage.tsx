@@ -125,9 +125,6 @@ export function KioskPage(): React.JSX.Element {
     agentActivity: initial?.agent_activity ?? 'idle',
   });
   const [assistantName, setAssistantName] = useState(initial?.assistant_name ?? 'Aura');
-  const [listenerConnected, setListenerConnected] = useState(
-    initial?.voice.listener_connected ?? false,
-  );
   const [avatarState, setAvatarState] = useState<AvatarState>('idle');
   const [tracking, setTracking] = useState<TrackingPoint | null>(null);
   const [wsStatus, setWsStatus] = useState<SocketStatus>(isDemo ? 'open' : 'connecting');
@@ -295,7 +292,6 @@ export function KioskPage(): React.JSX.Element {
     });
     setVolume(snapshot.music.volume);
     setAssistantName(snapshot.assistant_name);
-    setListenerConnected(snapshot.voice.listener_connected);
   }, []);
 
   const reloadState = useCallback(() => {
@@ -823,11 +819,6 @@ export function KioskPage(): React.JSX.Element {
                     ? t('kiosk.speaking')
                     : t('kiosk.hint', { name: assistantName })}
             </p>
-            {!listenerConnected && !isDemo ? (
-              <p className="mt-2 text-[11px] text-amber-300/80">
-                {t('kiosk.listenerOffline')}
-              </p>
-            ) : null}
           </div>
         </section>
 
@@ -1215,6 +1206,19 @@ export function KioskPage(): React.JSX.Element {
 
             {talkOpen ? (
               <>
+                <button
+                  type="button"
+                  onClick={() => void toggleContinuous()}
+                  className={cn(
+                    'mt-3 inline-flex min-h-[34px] items-center gap-1.5 rounded-xl border px-3 text-[11.5px] transition',
+                    continuous
+                      ? 'border-mint-400/35 bg-mint-400/[0.10] text-mint-200'
+                      : 'border-white/[0.10] bg-white/[0.03] text-ink-300 hover:border-white/[0.18]',
+                  )}
+                >
+                  <AudioLines size={14} />
+                  {continuous ? t('kiosk.continuousOn') : t('kiosk.startContinuous')}
+                </button>
                 <p className="mt-3 text-[11px] text-ink-400">
                   {querying
                     ? t('kiosk.thinking')
@@ -1222,6 +1226,11 @@ export function KioskPage(): React.JSX.Element {
                       ? t('kiosk.listening')
                       : t('kiosk.talkHint')}
                 </p>
+                {micState === 'granted' && !continuous ? (
+                  <p className="mt-1 text-[10.5px] text-mint-300/70">
+                    {t('kiosk.micReadyHint')}
+                  </p>
+                ) : null}
                 <form
                   className="mt-2 flex items-center gap-2"
                   onSubmit={(event) => {
