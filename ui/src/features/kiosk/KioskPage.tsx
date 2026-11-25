@@ -142,6 +142,10 @@ export function KioskPage(): React.JSX.Element {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [continuous, setContinuous] = useState(false);
+  const [micState, setMicState] = useState<
+    'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported'
+  >('unknown');
+  const [micError, setMicError] = useState<string | null>(null);
   const continuousRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -155,6 +159,38 @@ export function KioskPage(): React.JSX.Element {
   const lastActivity = useRef(Date.now());
   const lastEventAt = useRef(0);
   const speechTimer = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async (): Promise<void> => {
+      if (
+        typeof window === 'undefined' ||
+        !window.isSecureContext ||
+        navigator.mediaDevices?.getUserMedia === undefined
+      ) {
+        if (!cancelled) setMicState('unsupported');
+        return;
+      }
+      try {
+        const status = await navigator.permissions.query({
+          name: 'microphone' as unknown as PermissionName,
+        });
+        if (cancelled) return;
+        setMicState(status.state as 'granted' | 'prompt' | 'denied');
+        status.onchange = () => {
+          if (!cancelled) {
+            setMicState(status.state as 'granted' | 'prompt' | 'denied');
+          }
+        };
+      } catch {
+        if (!cancelled) setMicState('prompt');
+      }
+    };
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /* Clock / viewport / idle ------------------------------------------------- */
 
@@ -425,7 +461,38 @@ export function KioskPage(): React.JSX.Element {
     setTalkOpen(true);
     setAvatarState('listening');
     if (!isDemo) void kioskApi.setListening(true).catch(() => undefined);
+    if (micState !== 'granted' && micState !== 'denied' && micState !== 'unsupported') {
+      void acquireMicrophone().then((stream) =>
+        stream?.getTracks().forEach((track) => track.stop()),
+      );
+    }
     window.setTimeout(() => queryInput.current?.focus(), 50);
+  };
+
+  const acquireMicrophone = async (): Promise<MediaStream | null> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      setMicState('granted');
+      setMicError(null);
+      return stream;
+    } catch (cause) {
+      const name = (cause as { name?: string } | null)?.name ?? '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        setMicState('denied');
+        setMicError(t('kiosk.micDenied'));
+      } else if (name === 'NotFoundError') {
+        setMicError(t('kiosk.micNotFound'));
+      } else {
+        setMicError(t('kiosk.micError'));
+      }
+      return null;
+    }
   };
 
   const stopContinuous = (): void => {
@@ -546,15 +613,15 @@ export function KioskPage(): React.JSX.Element {
       pushChat('assistant', t('kiosk.recordUnsupported'));
       return;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      continuousRef.current = true;
-      setContinuous(true);
-      void continuousLoop(stream);
-    } catch {
-      pushChat('assistant', t('kiosk.recordPermission'));
+    const stream = await acquireMicrophone();
+    if (stream === null) {
+      pushChat('assistant', t('kiosk.micNeeded'));
+      return;
     }
+    streamRef.current = stream;
+    continuousRef.current = true;
+    setContinuous(true);
+    void continuousLoop(stream);
   };
 
   const toggleRecording = async (): Promise<void> => {
@@ -571,7 +638,11 @@ export function KioskPage(): React.JSX.Element {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await acquireMicrophone();
+      if (stream === null) {
+        pushChat('assistant', t('kiosk.micNeeded'));
+        return;
+      }
       const preferred = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : undefined;
@@ -1116,6 +1187,29 @@ export function KioskPage(): React.JSX.Element {
                     </p>
                   </div>
                 ))}
+              </div>
+            ) : null}
+
+            {talkOpen && micState !== 'granted' ? (
+              <div className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+                <p>{micError ?? t('kiosk.micNeeded')}</p>
+                {micState === 'denied' ? (
+                  <p className="mt-1 text-amber-200/80">{t('kiosk.micDeniedHint')}</p>
+                ) : null}
+                {micState === 'unsupported' ? (
+                  <p className="mt-1 text-amber-200/80">{t('kiosk.micUnsupported')}</p>
+                ) : null}
+                <button
+                  type="button"
+                  className="mt-1.5 rounded-lg border border-amber-300/40 px-2.5 py-1 text-[11px] font-medium text-amber-100 transition hover:bg-amber-300/10"
+                  onClick={() =>
+                    void acquireMicrophone().then((stream) =>
+                      stream?.getTracks().forEach((track) => track.stop()),
+                    )
+                  }
+                >
+                  {micState === 'denied' ? t('kiosk.micRetry') : t('kiosk.enableMic')}
+                </button>
               </div>
             ) : null}
 

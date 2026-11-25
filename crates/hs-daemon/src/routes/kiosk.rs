@@ -199,6 +199,12 @@ async fn kiosk_page(State(state): State<SharedState>) -> Response {
         axum::http::header::CACHE_CONTROL,
         axum::http::HeaderValue::from_static("no-store"),
     );
+    // Allow the kiosk page itself to request the microphone; without this the
+    // browser may not show the permission prompt in some embedding scenarios.
+    response.headers_mut().insert(
+        axum::http::HeaderName::from_static("permissions-policy"),
+        axum::http::HeaderValue::from_static("microphone=(self)"),
+    );
     response
 }
 
