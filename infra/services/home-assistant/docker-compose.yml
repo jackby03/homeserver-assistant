@@ -1,0 +1,52 @@
+# Home Assistant (reference compose deployment)
+# =============================================================================
+# The appliance runs Home Assistant as an Incus container managed by hs-daemon
+# and configures it through hs-homeassistant (REST API provisioning).
+# This compose file is the standalone/reference deployment with the same
+# image, ports and volumes (see ../README.md).
+#
+# Start:   docker compose up -d
+# Logs:    docker compose logs -f homeassistant
+# =============================================================================
+name: hs-home-assistant
+
+services:
+  homeassistant:
+    # `stable` is the upstream-recommended release channel for Home Assistant;
+    # pin a dated tag (e.g. 2026.2.0) if you need reproducibility.
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: hs-home-assistant
+    restart: unless-stopped
+
+    # Host networking is required for mDNS/SSDP discovery (HomeKit, Chromecast,
+    # printers, ...), for Bluetooth through D-Bus and for USB radio sticks.
+    # With bridge networking those integrations degrade silently.
+    network_mode: host
+
+    volumes:
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+      # Bluetooth (optional): the host BlueZ daemon must own the adapter.
+      - /run/dbus:/run/dbus:ro
+
+    environment:
+      TZ: ${TZ:-UTC}
+
+    # Note: privileged is NOT required. The only devices the appliance exposes
+    # to Home Assistant are opt-in through hs-daemon's app settings (USB
+    # passthrough for Zigbee/ZWave sticks).
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      # The Home Assistant image has no curl/wget; use its own Python.
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8123/manifest.json\", timeout=5)'"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Alternative without host networking (discovery/Bluetooth break):
+  #   network_mode: bridge
+  #   ports:
+  #     - "8123:8123/tcp"

@@ -1,0 +1,20 @@
+[package]
+name = "hs-profiles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Family profiles, avatar customization, permissions and local biometric matching"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+subtle.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

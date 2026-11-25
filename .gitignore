@@ -1,0 +1,56 @@
+# Rust / build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+*.profraw
+
+# UI
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/coverage/
+ui/*.tsbuildinfo
+ui/.npm-cache/
+ui/.pnpm-store/
+ui/.pnpm-local/
+ui/.pnpm-profile/
+ui/.tools/
+ui/install.log
+*.tsbuildinfo
+
+# Runtime state and secrets (never commit)
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.db
+*.db-journal
+*.redb
+/var/
+data/
+secrets/
+*.log
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Tool caches at repository root (pnpm store redirected by the sandbox)
+/.pnpm-store/
+/.pnpm-local/
+/.pnpm-profile/
+/.npm-cache/
+/.tools/
+/*.log
+
+# ISO build output
+iso/work/
+iso/output/
+*.iso
+*.img
+*.qcow2

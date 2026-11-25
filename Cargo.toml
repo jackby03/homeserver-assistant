@@ -1,0 +1,94 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hs-core",
+    "crates/hs-auth",
+    "crates/hs-system",
+    "crates/hs-runtime",
+    "crates/hs-apps",
+    "crates/hs-network",
+    "crates/hs-discovery",
+    "crates/hs-homeassistant",
+    "crates/hs-agent",
+    "crates/hs-tools",
+    "crates/hs-profiles",
+    "crates/hs-vision",
+    "crates/hs-daemon",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+authors = ["HomeServer Assistant Contributors"]
+repository = "https://example.invalid/homeserver-assistant"
+description = "HomeServer Assistant OS - local-first home server appliance"
+
+[workspace.dependencies]
+# --- Serialization -----------------------------------------------------------
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+
+# --- Async runtime / web -----------------------------------------------------
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "trace", "compression-gzip"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+hyperlocal = "0.9"
+http-body-util = "0.1"
+http = "1"
+bytes = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+url = "2"
+mime = "0.3"
+
+# --- Security / crypto -------------------------------------------------------
+argon2 = { version = "0.5", features = ["std"] }
+chacha20poly1305 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+subtle = "2"
+zeroize = { version = "1", features = ["derive"] }
+base64 = "0.22"
+rand = "0.8"
+hex = "0.4"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+
+# --- Storage -----------------------------------------------------------------
+redb = "2"
+
+# --- Observability / errors --------------------------------------------------
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+thiserror = "2"
+anyhow = "1"
+
+# --- Utilities ---------------------------------------------------------------
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-util = "0.3"
+clap = { version = "4", features = ["derive", "env"] }
+regex = "1"
+ipnet = "2"
+get_if_addrs = "0.5"
+libc = "0.2"
+mdns-sd = "0.11"
+sysinfo = "0.33"
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+debug = 1

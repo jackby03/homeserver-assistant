@@ -1,0 +1,17 @@
+# Optional Python dependencies for the local face-embedding helper.
+#
+# These packages are ONLY needed for profile enrollment via
+# vision/python/face_embed.py. Camera tracking, event publishing and face
+# matching never require Python: they are implemented in pure Rust.
+#
+# Install into a dedicated virtual environment:
+#   python3 -m venv /opt/homecore/vision-venv
+#   /opt/homecore/vision-venv/bin/pip install -r vision/python/requirements.txt
+#
+# CPU inference is enough for enrollment; CUDA packages are intentionally not
+# listed so the appliance stays offline and reproducible.
+
+insightface>=0.7.3
+onnxruntime>=1.17
+opencv-python-headless>=4.9
+numpy>=1.24

@@ -1,0 +1,20 @@
+[package]
+name = "hs-system"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Host hardware control and metrics: power policy, audio routing, camera/touch detection"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+sysinfo.workspace = true
+chrono.workspace = true
+get_if_addrs.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

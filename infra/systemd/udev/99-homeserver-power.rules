@@ -1,0 +1,15 @@
+# =============================================================================
+# HomeServer Assistant OS - power_supply udev rules
+# =============================================================================
+# Installed as /etc/udev/rules.d/99-homeserver-power.rules.
+#
+# Re-applies the power policy when the AC adapter or a battery is added or the
+# AC online state changes (e.g. charger plugged into the wall panel). The
+# script is idempotent and cheap, so restarting the oneshot unit is safe.
+#
+# systemctl --no-block is required here: udev RUN programs must not block the
+# event queue, and systemd itself must not wait for the unit inside a udev
+# worker (deadlock).
+# =============================================================================
+ACTION=="add", SUBSYSTEM=="power_supply", TAG+="systemd", ENV{SYSTEMD_WANTS}+="homeserver-power.service", RUN+="/bin/systemctl --no-block restart homeserver-power.service"
+ACTION=="change", SUBSYSTEM=="power_supply", ENV{POWER_SUPPLY_ONLINE}=="0|1", RUN+="/bin/systemctl --no-block restart homeserver-power.service"

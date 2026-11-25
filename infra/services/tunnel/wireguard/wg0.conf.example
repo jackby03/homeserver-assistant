@@ -1,0 +1,66 @@
+# =============================================================================
+# WireGuard road-warrior - appliance-side configuration (EXAMPLE)
+# =============================================================================
+# Installed as /etc/wireguard/wg0.conf (0600 root:root; private keys are
+# secrets and must never be committed).
+#
+# Purpose: reach the admin portal (https://<hostname>.local:8443) from the
+# owner's devices without publishing anything to the internet. The firewall
+# treats wg0 as trusted LAN: it can reach the admin port, but the DMZ is still
+# not allowed to reach wg0 (nftables `@lan_ifaces` includes wg0).
+#
+# Default scope: ADMIN PORT ONLY (host input 8443). Full LAN access for VPN
+# clients requires an explicit forward rule and a NAT rule; see README.md
+# ("Full LAN access") and keep it opt-in.
+#
+# Enable with:  sudo systemctl enable --now wg-quick@wg0
+# =============================================================================
+[Interface]
+# Appliance address inside the VPN. 10.99.0.0/24 is dedicated to this tunnel;
+# it must not overlap the LAN (e.g. 192.168.1.0/24) or the DMZ (10.20.30.0/24).
+Address = 10.99.0.1/24
+ListenPort = 51820
+PrivateKey = __REPLACE_WITH_SERVER_PRIVATE_KEY__
+
+# Keep the host listener private to the LAN? No: road-warrior clients connect
+# from the internet. Either forward UDP 51820 on the home router to the
+# appliance, or (preferred) keep the appliance behind a small always-on VPN
+# hub. There is no inbound-exposure requirement for Cloudflare Tunnel mode.
+#
+# MTU: 1420 leaves room for the WireGuard header on a 1500-byte path. Lower it
+# to 1380 if clients are behind PPPoE/mobile links with a smaller MTU.
+MTU = 1420
+
+# Do not let wg-quick rewrite this file behind the operator's back.
+SaveConfig = false
+
+# ---------------------------------------------------------------------------
+# Peers: one [Peer] block per device, one key pair per device.
+# ---------------------------------------------------------------------------
+[Peer]
+# Owner phone
+PublicKey = __REPLACE_WITH_PHONE_PUBLIC_KEY__
+# Optional extra symmetric layer; must match on both sides.
+PresharedKey = __REPLACE_WITH_PHONE_PRESHARED_KEY__
+# Exactly one /32 per device. This is also the routing table entry on the
+# server side: do not use 0.0.0.0/0 here.
+AllowedIPs = 10.99.0.2/32
+
+[Peer]
+# Owner laptop
+PublicKey = __REPLACE_WITH_LAPTOP_PUBLIC_KEY__
+AllowedIPs = 10.99.0.3/32
+
+# Client-side example (keep in the password manager, not in this repo):
+#
+#   [Interface]
+#   PrivateKey = <client private key>
+#   Address    = 10.99.0.2/32
+#   DNS        = 10.20.30.1        # AdGuard on the DMZ gateway (only if allowed)
+#
+#   [Peer]
+#   PublicKey           = <server public key>
+#   PresharedKey        = <shared key>
+#   Endpoint            = <home-public-ip-or-ddns>:51820
+#   AllowedIPs          = 10.99.0.0/24, 10.10.20.0/24
+#   PersistentKeepalive = 25      # keeps NAT mappings alive on mobile

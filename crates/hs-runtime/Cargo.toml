@@ -1,0 +1,32 @@
+[package]
+name = "hs-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Runtime provider port and native Incus adapter (LXC, OCI, VMs, snapshots)"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+http.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+url.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+hyperlocal.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

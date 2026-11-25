@@ -1,0 +1,54 @@
+# =============================================================================
+# Cloudflare Tunnel - outbound-only publishing (EXAMPLE)
+# =============================================================================
+# Installed as /etc/cloudflared/config.yml (0640 root:root).
+#
+# Security model:
+#   * cloudflared dials OUT to Cloudflare; NO inbound port is opened on the
+#     home router and the appliance firewall keeps 443/8443 closed to the WAN.
+#   * The tunnel origin is Caddy on loopback (HTTPS with the appliance-local
+#     CA). Traffic never leaves the host between cloudflared and Caddy, hence
+#     noTLSVerify is safe.
+#   * Public exposure must be selective: publish the admin portal only behind
+#     Cloudflare Access (SSO/OTP) or publish nothing at all. DMZ apps must not
+#     be published without authentication in front of them.
+#   * The credentials JSON is a secret: create it with
+#     `cloudflared tunnel create <name>` on the appliance and never commit it.
+# =============================================================================
+
+# Tunnel UUID from `cloudflared tunnel create homeserver`.
+# Replace the placeholder - this file is a template.
+tunnel: __CLOUDFLARE_TUNNEL_UUID__
+
+# Credentials file written by `cloudflared tunnel create`, mode 0600 root:root.
+credentials-file: /etc/cloudflared/__CLOUDFLARE_TUNNEL_UUID__.json
+
+# Structured logs to the journal; raise to debug only while troubleshooting.
+loglevel: info
+metrics: 127.0.0.1:20241
+no-autoupdate: true
+
+# Origin behaviour: Caddy uses the private CA; the hop is loopback-only.
+originRequest:
+  connectTimeout: 10s
+  tlsTimeout: 10s
+  keepAliveTimeout: 90s
+  noTLSVerify: true
+
+ingress:
+  # Admin portal. Protect it with Cloudflare Access (policy for the owner's
+  # email) before relying on it from outside.
+  - hostname: home.example.com
+    service: https://127.0.0.1:8443
+    originRequest:
+      httpHostHeader: homeserver.local
+
+  # Example app vhost (Home Assistant). Publishing this exposes home control
+  # to the internet: enable Cloudflare Access with MFA for it, or remove it.
+  - hostname: ha.example.com
+    service: https://127.0.0.1:8443
+    originRequest:
+      httpHostHeader: ha.home.local
+
+  # Catch-all: everything else is refused by cloudflared itself.
+  - service: http_status:404

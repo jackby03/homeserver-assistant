@@ -1,0 +1,50 @@
+[Unit]
+Description=HomeServer Assistant local vision service (camera tracking)
+Documentation=file:/opt/homeserver-assistant/docs/DEPLOYMENT.md
+After=local-fs.target systemd-tmpfiles-setup.service
+# The camera may enumerate late on USB; do not fail hard, retry is handled by
+# Restart=always below.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Unprivileged system user; camera access comes from the video group, never
+# from root.
+User=hs-vision
+Group=video
+SupplementaryGroups=video
+# Unix sockets created by the service are 0660. The parent directory
+# /run/homecore is created by systemd-tmpfiles as root:hs-vision mode 2770
+# (setgid), so the socket inherits group hs-vision even though the service's
+# primary group is video (needed for the camera nodes). The daemon runs as
+# root and can always connect.
+UMask=0007
+ExecStart=/usr/local/bin/hs-vision --device /dev/video0 --socket /run/homecore/vision.sock
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+
+# --- Hardening ---------------------------------------------------------------
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+# With PrivateDevices=true the device policy is closed; this is the complete
+# list of device nodes the service may open (video0/video1: capture + metadata).
+DeviceAllow=/dev/video0 rw
+DeviceAllow=/dev/video1 rw
+# No network access is required: events are delivered over the Unix socket.
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

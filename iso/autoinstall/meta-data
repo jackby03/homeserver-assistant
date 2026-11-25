@@ -1,0 +1,12 @@
+#cloud-config
+# =============================================================================
+# HomeServer Assistant OS - NoCloud meta-data
+# =============================================================================
+# Delivered next to user-data in /nocloud/ on the installation ISO.
+# NoCloud only requires instance-id and local-hostname; everything else is in
+# user-data (which carries the autoinstall payload).
+#
+# instance-id must be stable for a given image so cloud-init does not treat
+# every boot as a new instance; do not include a timestamp or random value.
+instance-id: homeserver-assistant-iso
+local-hostname: homeserver

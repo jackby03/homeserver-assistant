@@ -1,0 +1,41 @@
+# =============================================================================
+# EXAMPLE app vhost snippet - documentation only (.example, not imported)
+# =============================================================================
+# The daemon renders a file like this as
+#   /etc/caddy/apps.d/app-home-assistant.caddy
+# after an app is deployed and a route is created through the portal.
+#
+# Contract (see infra/services/caddy/README.md):
+#   * complete site blocks only; no global options, no import directives;
+#   * `tls internal` (the appliance never gets public certificates);
+#   * the upstream is the app's LAN/DMZ address and port;
+#   * baseline security headers are repeated here because each snippet is an
+#     independent site block;
+#   * the daemon validates the snippet with `caddy validate` and only then
+#     reloads Caddy; on failure the previous snippet is restored.
+#
+# This example exposes Home Assistant at https://ha.<base_domain>:8443
+# =============================================================================
+
+https://ha.{$HS_BASE_DOMAIN:home.local}:{$HS_ADMIN_PORT:8443} {
+	tls internal
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=86400"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"   # Home Assistant allows iframe dashboards
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Home Assistant is reached over the LAN bridge; the appliance host must be
+	# able to route to it (LAN profile). Never point a public tunnel at a DMZ
+	# app without authentication in front of it.
+	reverse_proxy 10.10.20.42:8123 {
+		flush_interval -1              # WebSocket (/api/websocket)
+		header_up X-Forwarded-Proto https
+	}
+
+	log
+}

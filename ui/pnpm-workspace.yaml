@@ -1,0 +1,10 @@
+# Single-package pnpm project. Keeping an explicit workspace file lets pnpm 12+
+# read project settings (pnpm moved several settings out of package.json and
+# `.npmrc`); it also keeps pnpm 10 fully supported.
+packages:
+  - '.'
+
+# The sealed Windows sandbox used for verification cannot open pnpm's store
+# operation lock for the implicit pre-run install check. Dependencies are
+# installed explicitly instead.
+verifyDepsBeforeRun: false

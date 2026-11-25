@@ -1,0 +1,17 @@
+[Unit]
+Description=HomeServer Assistant power policy (lid switch and battery charge limit)
+Documentation=file:/opt/homeserver-assistant/docs/DEPLOYMENT.md
+After=local-fs.target
+Before=hs-kiosk.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/hs-power-policy.sh
+# udev restarts the unit on power_supply add/change events (see
+# udev/99-homeserver-power.rules); the script is idempotent, so extra runs are
+# harmless.
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

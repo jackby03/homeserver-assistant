@@ -1,0 +1,51 @@
+[package]
+name = "hs-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "HomeServer Assistant privileged daemon: HTTPS/WS API, kiosk API and composition root"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+hs-auth = { path = "../hs-auth" }
+hs-system = { path = "../hs-system" }
+hs-runtime = { path = "../hs-runtime" }
+hs-apps = { path = "../hs-apps" }
+hs-network = { path = "../hs-network" }
+hs-discovery = { path = "../hs-discovery" }
+hs-homeassistant = { path = "../hs-homeassistant" }
+hs-agent = { path = "../hs-agent" }
+hs-tools = { path = "../hs-tools" }
+hs-profiles = { path = "../hs-profiles" }
+hs-vision = { path = "../hs-vision" }
+
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+axum-extra.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+ipnet.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

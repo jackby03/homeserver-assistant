@@ -1,0 +1,27 @@
+[package]
+name = "hs-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Administrator authentication: Argon2id, JWT sessions, RBAC, CSRF and audit"
+
+[dependencies]
+hs-core = { path = "../hs-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+argon2.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+base64.workspace = true
+rand.workspace = true
+zeroize.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,54 @@
+[Unit]
+Description=HomeServer Assistant wall kiosk (cage + Chromium)
+Documentation=file:/opt/homeserver-assistant/docs/DEPLOYMENT.md
+# logind must have created the session/seat before cage starts; the wrapper
+# waits for the daemon health endpoint anyway, so boot order is not critical.
+After=systemd-user-sessions.service network-online.target hs-daemon.service
+Wants=network-online.target
+# Free tty1: the kiosk replaces the login prompt on the wall panel.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+User=kiosk
+# PAMName=login + TTYPath gives the session a logind seat so cage can open the
+# DRM device without a display manager.
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+# Placeholder only: the wrapper recomputes XDG_RUNTIME_DIR from the kiosk UID,
+# so changing kiosk's UID never requires editing this unit.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=HOME=/var/lib/kiosk
+Environment=XDG_SESSION_TYPE=wayland
+SupplementaryGroups=video render input audio
+ExecStart=/usr/local/bin/hs-kiosk-start
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+# --- Hardening ---------------------------------------------------------------
+# Chromium's own sandbox is the primary boundary; do not set
+# NoNewPrivileges=true here because it can disable the setuid/namespace
+# sandbox fallback on kernels where unprivileged user namespaces are
+# restricted. File-system hardening is safe and useful.
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/kiosk /run
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=graphical.target
