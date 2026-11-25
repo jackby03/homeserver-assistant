@@ -17,7 +17,11 @@ import {
   Wifi,
   X,
 } from 'lucide-react';
-import { kioskApi, transcribeKioskAudio } from '@/api/kiosk';
+import {
+  kioskApi,
+  synthesizeKioskSpeech,
+  transcribeKioskAudio,
+} from '@/api/kiosk';
 import type { KioskHistoryEntry } from '@/api/kiosk';
 import { profilesApi } from '@/api/profiles';
 import { isKioskEvent } from '@/api/types';
@@ -156,6 +160,9 @@ export function KioskPage(): React.JSX.Element {
   const lastActivity = useRef(Date.now());
   const lastEventAt = useRef(0);
   const speechTimer = useRef(0);
+  const speechAudio = useRef<HTMLAudioElement | null>(null);
+  const speechUrl = useRef<string | null>(null);
+  const lastSpoken = useRef<{ text: string; at: number }>({ text: '', at: 0 });
 
   useEffect(() => {
     let cancelled = false;
@@ -244,19 +251,48 @@ export function KioskPage(): React.JSX.Element {
     (text: string): void => {
       const trimmed = text.trim();
       if (trimmed === '') return;
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-      const synth = window.speechSynthesis;
-      synth.cancel();
-      const utterance = new SpeechSynthesisUtterance(trimmed);
-      const voices = synth.getVoices();
-      const preferred =
-        voices.find((voice) => voice.lang.toLowerCase().startsWith(language === 'en' ? 'en' : 'es')) ??
-        voices.find((voice) => voice.lang.toLowerCase().startsWith('es'));
-      if (preferred !== undefined) utterance.voice = preferred;
-      utterance.lang = preferred?.lang ?? (language === 'en' ? 'en-US' : 'es-ES');
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      synth.speak(utterance);
+      const now = Date.now();
+      if (lastSpoken.current.text === trimmed && now - lastSpoken.current.at < 4_000) {
+        return;
+      }
+      lastSpoken.current = { text: trimmed, at: now };
+      const fallback = (): void => {
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+        const synth = window.speechSynthesis;
+        synth.cancel();
+        const utterance = new SpeechSynthesisUtterance(trimmed);
+        const voices = synth.getVoices();
+        const preferred =
+          voices.find((voice) =>
+            voice.lang.toLowerCase().startsWith(language === 'en' ? 'en' : 'es'),
+          ) ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('es'));
+        if (preferred !== undefined) utterance.voice = preferred;
+        utterance.lang = preferred?.lang ?? (language === 'en' ? 'en-US' : 'es-ES');
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        synth.speak(utterance);
+      };
+      speechAudio.current?.pause();
+      if (speechUrl.current !== null) {
+        URL.revokeObjectURL(speechUrl.current);
+        speechUrl.current = null;
+      }
+      void synthesizeKioskSpeech(trimmed)
+        .then((blob) => {
+          const url = URL.createObjectURL(blob);
+          speechUrl.current = url;
+          const audio = new Audio(url);
+          speechAudio.current = audio;
+          audio.onended = () => {
+            if (speechUrl.current === url) {
+              URL.revokeObjectURL(url);
+              speechUrl.current = null;
+            }
+          };
+          audio.onerror = fallback;
+          void audio.play().catch(fallback);
+        })
+        .catch(fallback);
     },
     [language],
   );
@@ -366,7 +402,7 @@ export function KioskPage(): React.JSX.Element {
         case 'speech':
           setAvatarState('speaking');
           pushChat('assistant', event.text);
-          if (!talkOpen) speakReply(event.text);
+          speakReply(event.text);
           break;
         case 'notification':
           pushToast({
@@ -529,6 +565,7 @@ export function KioskPage(): React.JSX.Element {
         ].slice(-24),
       );
       pushChat('assistant', response.reply);
+      speakReply(response.reply);
       setLive((current) => ({ ...current, agentActivity: 'speaking' }));
       setAvatarState('speaking');
       window.clearTimeout(speechTimer.current);

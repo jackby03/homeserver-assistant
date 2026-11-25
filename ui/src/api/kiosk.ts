@@ -106,3 +106,17 @@ export async function transcribeKioskAudio(blob: Blob): Promise<string> {
   if (data.error) throw new Error(data.error);
   return (data.text ?? '').trim();
 }
+
+
+/** Render a reply with the local Piper voice and return its WAV blob. */
+export async function synthesizeKioskSpeech(text: string): Promise<Blob> {
+  const response = await fetch(`${STT_BASE_URL}/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) {
+    throw new Error(`local TTS failed (HTTP ${response.status})`);
+  }
+  return response.blob();
+}
