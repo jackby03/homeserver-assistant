@@ -184,6 +184,30 @@ def choose_output_device() -> int | str | None:
         return None
 
 
+def stream_probe_level(device: int, attempts: int = 6) -> float | None:
+    """Probe with the same 512-sample blocks the streaming VAD uses.
+
+    Some host APIs (DirectSound on this host) report signal for long buffers but
+    return digital silence for short blocks, so selection must use the real
+    streaming block size.
+    """
+    levels: list[float] = []
+    for _ in range(attempts):
+        try:
+            audio = sd.rec(
+                512,
+                samplerate=SAMPLE_RATE,
+                channels=1,
+                dtype="float32",
+                device=device,
+            )
+            sd.wait()
+            levels.append(rms(audio.flatten()))
+        except Exception:
+            return None
+    return max(levels) if levels else None
+
+
 def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | None:
     """Pick the strongest input device, optionally filtered by name (G435)."""
     best: tuple[float, int] | None = None
@@ -191,14 +215,20 @@ def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | N
     for index, device in input_devices():
         if wanted and wanted not in device["name"].lower():
             continue
-        level = sample_level(index)
+        level = stream_probe_level(index)
         if level is None:
             continue
-        print(f"[wakeword] input [{index:2d}] level={level:.6f} {device['name']}")
-        if level > 0.0001 and (best is None or level > best[0]):
+        print(
+            f"[wakeword] input [{index:2d}] stream peak={level:.6f} "
+            f"{device['name']}"
+        )
+        if level > 0.0002 and (best is None or level > best[0]):
             best = (level, index)
     if best is None:
-        print(f"[wakeword] no input device matched '{name_filter or '*'}'", file=sys.stderr)
+        print(
+            f"[wakeword] no input device matched '{name_filter or '*'}'",
+            file=sys.stderr,
+        )
         return None
     print(f"[wakeword] auto-selected input device [{best[1]}]")
     return best[1], best[0]
