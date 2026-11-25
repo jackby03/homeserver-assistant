@@ -869,7 +869,7 @@ async fn voice_assistant_name_is_configurable_and_wake_word_activates_the_kiosk(
         .kiosk(
             Method::POST,
             "/api/v1/kiosk/wake",
-            Some(json!({"transcript": "oye Jarvis enciende la luz", "confidence": 0.92})),
+            Some(json!({"transcript": "hola Jarvis enciende la luz", "confidence": 0.92})),
             Some(&app.state.kiosk_token()),
         )
         .await;
@@ -952,7 +952,7 @@ async fn disabled_wake_word_ignores_transcripts() {
         .kiosk(
             Method::POST,
             "/api/v1/kiosk/wake",
-            Some(json!({"transcript": "oye aura"})),
+            Some(json!({"transcript": "hola aura"})),
             Some(&app.state.kiosk_token()),
         )
         .await;

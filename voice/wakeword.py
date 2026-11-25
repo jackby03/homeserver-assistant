@@ -886,7 +886,7 @@ def main() -> int:
         args.url, token
     )
     initial_prompt = args.initial_prompt.strip() or (
-        f"Oye {assistant_name}. Hola {assistant_name}."
+        f"Hola {assistant_name}."
     )
     try:
         input_name = sd.query_devices(device)["name"] if device is not None else sd.query_devices(kind="input")["name"]
@@ -1029,7 +1029,7 @@ def main() -> int:
             return 0
 
         # Continuous conversation: after the wake word the user can keep
-        # talking without repeating "Oye Aura". History is sent each turn so
+        # talking without repeating "Hola Aura". History is sent each turn so
         # the agent keeps context.
         conversation: list[dict[str, str]] = [
             {"role": "user", "content": query},
