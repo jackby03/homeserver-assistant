@@ -217,21 +217,104 @@ def record_window(seconds: float, device: str | int | None) -> np.ndarray:
     return audio.flatten()
 
 
+def enhance_audio(audio: np.ndarray) -> np.ndarray:
+    """High-pass/spectral-denoise + AGC for clearer Whisper input.
+
+    Mirrors the intent of Discord/WebRTC noise suppression without native
+    dependencies: estimate the noise spectrum from the quietest frames, subtract
+    it (spectral subtraction), then normalize speech level.
+    """
+    if audio.size < 1024:
+        return normalize_audio(audio)
+    samples = audio.astype(np.float64)
+    samples = samples - samples.mean()
+    frame_size = 512
+    hop = 256
+    window = np.hanning(frame_size)
+    pad = frame_size
+    padded = np.concatenate([np.zeros(pad), samples, np.zeros(pad + frame_size)])
+    frame_count = max(1, (len(padded) - frame_size) // hop + 1)
+    frames = np.stack(
+        [padded[index * hop : index * hop + frame_size] for index in range(frame_count)]
+    )
+    spectrum = np.fft.rfft(frames * window, axis=1)
+    magnitude = np.abs(spectrum)
+    energies = magnitude.mean(axis=1)
+    quiet_count = max(1, len(energies) // 5)
+    quiet = np.argsort(energies)[:quiet_count]
+    noise = magnitude[quiet].mean(axis=0)
+    cleaned = np.maximum(magnitude - 1.4 * noise, 0.08 * magnitude)
+    phase = np.exp(1j * np.angle(spectrum))
+    restored = np.fft.irfft(cleaned * phase, n=frame_size, axis=1) * window
+    output = np.zeros(len(padded))
+    weight = np.zeros(len(padded))
+    for index in range(frame_count):
+        start = index * hop
+        output[start : start + frame_size] += restored[index]
+        weight[start : start + frame_size] += window**2
+    weight[weight < 1e-6] = 1.0
+    output /= weight
+    output = output[pad : pad + len(samples)]
+    level = rms(output)
+    if level > 0:
+        gain = min(0.08 / level, 8.0)
+        output = np.clip(output * gain, -1.0, 1.0)
+    return output.astype(np.float32)
+
+
+class SileroVad:
+    """Streaming Silero VAD (ONNX) used to detect speech robustly."""
+
+    def __init__(self, model_path: str) -> None:
+        import onnxruntime as ort
+
+        self.session = ort.InferenceSession(
+            model_path, providers=["CPUExecutionProvider"]
+        )
+        self.reset()
+
+    def reset(self) -> None:
+        self.state = np.zeros((2, 1, 128), dtype=np.float32)
+        self.sr = np.array(SAMPLE_RATE, dtype=np.int64)
+
+    def probability(self, frame: np.ndarray) -> float:
+        chunk = frame[:512].astype(np.float32)
+        if chunk.size < 512:
+            chunk = np.pad(chunk, (0, 512 - chunk.size))
+        try:
+            probability, state = self.session.run(
+                None,
+                {
+                    "input": chunk.reshape(1, -1),
+                    "state": self.state,
+                    "sr": self.sr,
+                },
+            )
+        except Exception as error:
+            print(f"[wakeword] Silero VAD failed: {error}", file=sys.stderr)
+            return 0.0
+        self.state = state
+        return float(probability.reshape(-1)[0])
+
+
 def record_utterance(
     device: str | int | None,
     threshold: float,
     idle_timeout: float = WAKE_IDLE_TIMEOUT,
+    vad: SileroVad | None = None,
 ) -> np.ndarray | None:
     """Stream frames until speech + trailing silence; None on idle timeout.
 
-    This replaces fixed 2.4 s windows: the wake phrase is transcribed as soon as
-    the user stops speaking (0.45 s of silence), which removes ~1.5-2 s of
-    latency from the voice UI. A small pre-roll keeps the beginning intact.
+    With Silero VAD, speech is detected by a neural probability instead of a raw
+    volume threshold, which is far more robust with quiet headset microphones.
     """
-    chunk = 0.1
-    preroll_frames = 4  # 0.4 s before speech onset
+    chunk_samples = 512  # 32 ms at 16 kHz: Silero VAD window
+    chunk = chunk_samples / SAMPLE_RATE
+    preroll_frames = 12  # ~0.4 s before speech onset
     silence = WAKE_SILENCE_SECONDS
     deadline = time.monotonic() + idle_timeout
+    if vad is not None:
+        vad.reset()
     pre: list[np.ndarray] = []
     utterance: list[np.ndarray] = []
     speech_started = False
@@ -240,7 +323,7 @@ def record_utterance(
     peak = 0.0
     while True:
         block = sd.rec(
-            int(chunk * SAMPLE_RATE),
+            chunk_samples,
             samplerate=SAMPLE_RATE,
             channels=1,
             dtype="float32",
@@ -250,13 +333,23 @@ def record_utterance(
         mono = block.flatten()
         level = rms(mono)
         peak = max(peak, level)
+        probability = vad.probability(mono) if vad is not None else None
+        is_speech = (
+            probability >= 0.5 if probability is not None else level >= threshold
+        )
+        quiet_frame = (
+            probability < 0.35 if probability is not None else level < threshold
+        )
         if not speech_started:
             pre.append(mono)
             if len(pre) > preroll_frames:
                 pre.pop(0)
-            if level >= threshold:
+            if is_speech:
                 speech_started = True
-                print(f"[wakeword] speech detected level={level:.5f}")
+                detail = (
+                    f"vad={probability:.2f}" if probability is not None else f"rms={level:.5f}"
+                )
+                print(f"[wakeword] speech detected ({detail})")
                 utterance = [*pre, mono]
                 pre.clear()
                 speech_time = chunk
@@ -269,7 +362,7 @@ def record_utterance(
                 return None
             continue
         utterance.append(mono)
-        if level < threshold:
+        if quiet_frame:
             quiet += chunk
         else:
             quiet = 0.0
@@ -341,7 +434,7 @@ def transcribe(
 ) -> str:
     """Transcribe a window locally; model/driver failures must not kill the loop."""
     try:
-        audio = normalize_audio(audio)
+        audio = enhance_audio(audio)
         segments, _info = model.transcribe(
             audio,
             language=language if language in {"es", "en"} else None,
@@ -520,6 +613,11 @@ def main() -> int:
         "--config", type=Path, default=DEFAULT_CONFIG, help="daemon config.json"
     )
     parser.add_argument(
+        "--silero-model",
+        default="",
+        help="Silero VAD ONNX model for robust neural speech detection",
+    )
+    parser.add_argument(
         "--model",
         default="base",
         help="faster-whisper model (tiny|base|small); base balances accuracy and memory",
@@ -649,6 +747,17 @@ def main() -> int:
         else choose_output_device()
     )
 
+    vad = None
+    if args.silero_model:
+        try:
+            vad = SileroVad(args.silero_model)
+            print(f"[wakeword] Silero VAD loaded from {args.silero_model}")
+        except Exception as error:
+            print(
+                f"[wakeword] Silero VAD unavailable: {error}",
+                file=sys.stderr,
+            )
+
     token = args.token.strip() or read_kiosk_token(args.config)
     assistant_name = args.assistant_name.strip() or fetch_assistant_name(
         args.url, token
@@ -686,7 +795,7 @@ def main() -> int:
                 pass
             last_heartbeat = now
 
-        window = record_utterance(device, args.threshold)
+        window = record_utterance(device, args.threshold, vad=vad)
         if window is None:
             silent_windows += 1
             if silent_windows == 1 or silent_windows % 6 == 0:
@@ -834,6 +943,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
