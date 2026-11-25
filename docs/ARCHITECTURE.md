@@ -73,7 +73,7 @@ Rules:
   except along the arrows above.
 - **Ports and adapters.** `hs-tools` defines small port traits
   (`RuntimeControl`, `DomoticsControl`, `AudioControl`, `SystemControl`,
-  `WebhookClient`); `hs-daemon` implements them with real adapters. That keeps
+  `WebhookClient`, `MemoryStore`); `hs-daemon` implements them with real adapters. That keeps
   the security-critical permission check independent from infrastructure.
 - **Composition root.** Only `hs-daemon` knows concrete adapters and their
   configuration. Domain crates accept injected trait objects.
@@ -100,6 +100,7 @@ Microphone ──> local helper (voice/, local STT) ── transcript only ─�
    POST /kiosk/wake ──> hs-core wake-word matcher ──> listening window
    └─> browser/helper POST /kiosk/agent/query ──> agent loop
         └─> tools (permission-checked) ──> Home Assistant / music / runtime
+             └─> memory.* (per-profile JSON memory in data/memory/)
 ```
 
 ### 4.3 Local-first assistant routing

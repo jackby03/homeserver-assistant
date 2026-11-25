@@ -109,7 +109,12 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
 
     let profiles = Arc::new(ProfileService::new(Arc::clone(&db), Arc::clone(&secrets)));
 
-    let ports = adapters::build_ports(Arc::clone(&runtime), Arc::clone(&system), Arc::clone(&ha));
+    let ports = adapters::build_ports(
+        Arc::clone(&runtime),
+        Arc::clone(&system),
+        Arc::clone(&ha),
+        &daemon.data_dir,
+    );
     let tools = ToolRegistry::builtin(ports);
     let factory = Arc::new(DefaultFactory::default());
     let agent = Arc::new(AgentService::new(

@@ -388,6 +388,12 @@ Response:
                 "allowed":true,"output":{…},"error":null,"duration_ms":12}],
  "usage":{"prompt_tokens":120,"completion_tokens":30}}
 ```
+The built-in tool set includes `system.status`, runtime start/stop/list,
+Home Assistant entity/service calls, music controls, outbound webhooks and the
+profile-scoped `memory.remember` / `memory.recall` / `memory.forget` tools.
+Memory is stored as one JSON file per profile under `data/memory/` and is only
+exposed to the model through those tools.
+
 Every tool is checked against the profile's `allowed_tools` **before** execution;
 denied tools appear in the trace with `"allowed":false` and are never executed.
 

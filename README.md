@@ -310,7 +310,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | DNS DoH/DoT, nftables, DMZ, netplan | ✅ Catálogo de 40 variantes, renderizado/golden tests; aplicación real en Linux |
 | Home Assistant + descubrimiento IoT | ✅ Implementado con transportes simulados en tests |
 | Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional |
-| Agente IA, herramientas, workflows, perfiles | ✅ 10 herramientas con permisos por perfil y trazas |
+| Agente IA, herramientas, workflows, perfiles | ✅ 13 herramientas con permisos por perfil, memoria persistente y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
 | UI (admin, kiosko, wizard) | ✅ Type-check, 15 tests y build de producción (0,90 MB) |
 | Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; build/prueba real en host Linux |

@@ -16,8 +16,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::ports::{
-    AudioControl, DomoticsControl, EntityLite, RuntimeControl, SystemControl, ToolPorts,
-    WebhookClient,
+    AudioControl, DomoticsControl, EntityLite, MemoryEntry, MemoryStore, RuntimeControl,
+    SystemControl, ToolPorts, WebhookClient,
 };
 
 /// Number of adapter calls observed by the fakes.
@@ -67,6 +67,7 @@ pub(crate) fn fake_ports() -> (ToolPorts, Arc<CallCounts>, Arc<Mutex<Option<Valu
             calls: Arc::clone(&counts.webhooks),
             payload: Arc::clone(&webhook_payload),
         }),
+        memory: Arc::new(FakeMemory::default()),
     };
     (ports, counts, webhook_payload)
 }
@@ -195,5 +196,60 @@ impl WebhookClient for FakeWebhooks {
             *slot = Some(payload);
         }
         Ok(200)
+    }
+}
+
+#[derive(Default)]
+struct FakeMemory {
+    entries: Arc<Mutex<Vec<(String, MemoryEntry)>>>,
+}
+
+#[async_trait]
+impl MemoryStore for FakeMemory {
+    async fn remember(
+        &self,
+        profile_id: &str,
+        key: &str,
+        value: &str,
+    ) -> Result<MemoryEntry, String> {
+        let entry = MemoryEntry {
+            key: key.to_owned(),
+            value: value.to_owned(),
+        };
+        let mut entries = self.entries.lock().map_err(|_| "memory lock".to_owned())?;
+        let scope = format!("{profile_id}:{key}");
+        entries.retain(|(stored, _)| stored != &scope);
+        entries.push((scope, entry.clone()));
+        Ok(entry)
+    }
+
+    async fn recall(
+        &self,
+        profile_id: &str,
+        query: Option<&str>,
+    ) -> Result<Vec<MemoryEntry>, String> {
+        let entries = self.entries.lock().map_err(|_| "memory lock".to_owned())?;
+        let prefix = format!("{profile_id}:");
+        let needles = query.map(str::to_lowercase);
+        Ok(entries
+            .iter()
+            .filter(|(scope, _)| scope.starts_with(&prefix))
+            .map(|(_, entry)| entry)
+            .filter(|entry| {
+                needles.as_ref().is_none_or(|needle| {
+                    entry.key.to_lowercase().contains(needle)
+                        || entry.value.to_lowercase().contains(needle)
+                })
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn forget(&self, profile_id: &str, key: &str) -> Result<bool, String> {
+        let mut entries = self.entries.lock().map_err(|_| "memory lock".to_owned())?;
+        let scope = format!("{profile_id}:{key}");
+        let before = entries.len();
+        entries.retain(|(stored, _)| stored != &scope);
+        Ok(entries.len() != before)
     }
 }
