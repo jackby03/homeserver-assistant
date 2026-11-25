@@ -164,6 +164,19 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
         "application state initialized"
     );
 
+    // The active profile is runtime state; without this the kiosk would show
+    // "no active profile" after every daemon restart until a human switches it.
+    if let Ok(profiles) = state.profiles.list() {
+        if let Some(profile) = profiles
+            .iter()
+            .find(|profile| profile.role == hs_core::models::ProfileRole::Owner)
+            .or_else(|| profiles.first())
+        {
+            state.kiosk.activate_profile(profile.clone());
+            info!(profile = %profile.name, "default profile activated");
+        }
+    }
+
     Ok(state)
 }
 
