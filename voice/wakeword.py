@@ -585,10 +585,11 @@ def main() -> int:
         trailing = (outcome.get("trailing_query") or "").strip()
         query = trailing
         if not query:
-            # Tell the user to speak: local voice when allowed, otherwise a
-            # short tone through the headset (Windows blocks SAPI in background
-            # processes, but PortAudio output works).
-            prompt_listening(args)
+            # Do not block with a 2 s TTS prompt: start capturing immediately.
+            # The user naturally starts talking right after the wake word, so
+            # only a short tone is played before the request recorder opens.
+            beep()
+            print("[wakeword] listening for the request...")
             try:
                 request_audio = record_until_silence(
                     QUERY_MAX_SECONDS, SILENCE_SECONDS, args.threshold, device
