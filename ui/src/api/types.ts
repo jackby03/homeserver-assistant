@@ -559,6 +559,13 @@ export interface FirewallStatusResponse {
 export interface FirewallApplyResponse {
   applied: boolean;
   rules_count: number;
+  backup: string | null;
+}
+
+export interface FirewallBackup {
+  name: string;
+  modified_at: IsoTimestamp;
+  size_bytes: number;
 }
 
 export interface DnsTestResponse {
@@ -897,6 +904,7 @@ export function isKioskEvent(value: unknown): value is KioskEvent {
     'notification',
   ].includes(value.type);
 }
+
 
 
 
