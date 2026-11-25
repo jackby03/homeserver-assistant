@@ -289,7 +289,9 @@ impl Default for DnsConfig {
         Self {
             enabled: true,
             engine: DnsEngine::AdGuardHome,
-            provider: DnsProvider::cloudflare(),
+            // The household-safe profile by default: Cloudflare Family blocks
+            // malware and adult content, and DoH is always preferred.
+            provider: DnsProvider::cloudflare_family(),
             protocol: DnsProtocol::Doh,
             custom_upstream: None,
             blocklists: vec![
@@ -322,6 +324,16 @@ impl DnsConfig {
                     self.provider,
                     self.protocol.id()
                 ),
+            ));
+        }
+        // Encryption is always preferred: plain DNS is only allowed for legacy
+        // providers that do not offer DoH/DoT at all.
+        if self.protocol == DnsProtocol::Plain
+            && self.provider.preferred_encrypted_protocol().is_some()
+        {
+            return Err(CoreError::validation(
+                "protocol",
+                "this provider offers encrypted DNS; choose DoH or DoT (plain DNS is only for legacy providers without encryption)",
             ));
         }
 
@@ -932,6 +944,35 @@ mod tests {
         config.voice.activation_mode = VoiceActivationMode::WakeWord;
         config.validate().expect("custom voice config is valid");
         assert_eq!(config.voice.wake_phrase(), "Oye Jarvis");
+    }
+
+    #[test]
+    fn default_dns_is_family_and_always_encrypted() {
+        let config = SystemConfig::bootstrap();
+        assert_eq!(
+            config.network.dns.provider,
+            DnsProvider::cloudflare_family()
+        );
+        assert_eq!(config.network.dns.protocol, DnsProtocol::Doh);
+        assert!(config.network.dns.protocol.is_encrypted());
+        assert_eq!(config.network.dns.protocol.id(), "doh");
+    }
+
+    #[test]
+    fn plain_dns_is_rejected_when_encryption_is_available() {
+        let mut config = valid_config();
+        config.network.dns.provider = DnsProvider::cloudflare_family();
+        config.network.dns.protocol = DnsProtocol::Plain;
+        assert!(
+            config.validate().is_err(),
+            "plain DNS must be rejected for providers with DoH/DoT"
+        );
+
+        // Legacy provider without encrypted transports may still use plain DNS.
+        config.network.dns.provider = DnsProvider::new("comodo_secure").unwrap();
+        config
+            .validate()
+            .expect("plain-only legacy provider is allowed");
     }
 
     #[test]

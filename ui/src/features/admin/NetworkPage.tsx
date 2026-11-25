@@ -41,7 +41,7 @@ import { useToast } from '@/state/ToastProvider';
 const DEFAULT_DNS: DnsConfig = {
   enabled: true,
   engine: 'adguard_home',
-  provider: 'cloudflare',
+  provider: 'cloudflare_family',
   protocol: 'doh',
   custom_upstream: null,
   blocklists: [],

@@ -794,6 +794,28 @@ impl DnsProvider {
         }
     }
 
+    /// Whether the provider offers at least one encrypted transport.
+    #[must_use]
+    pub fn has_encrypted_transport(&self) -> bool {
+        self.supports(DnsProtocol::Doh) || self.supports(DnsProtocol::Dot)
+    }
+
+    /// Preferred encrypted transport: DoH first, then DoT.
+    ///
+    /// The appliance always prioritizes encryption; plain DNS is only used for
+    /// legacy providers without DoH/DoT. Returns `None` when the provider has no
+    /// encrypted endpoint (currently only Comodo Secure).
+    #[must_use]
+    pub fn preferred_encrypted_protocol(&self) -> Option<DnsProtocol> {
+        if self.supports(DnsProtocol::Doh) {
+            Some(DnsProtocol::Doh)
+        } else if self.supports(DnsProtocol::Dot) {
+            Some(DnsProtocol::Dot)
+        } else {
+            None
+        }
+    }
+
     /// Whether the provider needs an operator-supplied configuration id.
     #[must_use]
     pub fn requires_config_id(&self) -> bool {

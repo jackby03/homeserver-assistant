@@ -4,7 +4,7 @@ import type { DmzConfig, DnsConfig } from '@/api/types';
 export const DEFAULT_DNS_CONFIG: DnsConfig = {
   enabled: true,
   engine: 'adguard_home',
-  provider: 'cloudflare',
+  provider: 'cloudflare_family',
   protocol: 'doh',
   custom_upstream: null,
   blocklists: [

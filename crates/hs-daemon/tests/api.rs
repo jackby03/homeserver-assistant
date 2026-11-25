@@ -472,6 +472,40 @@ async fn dns_provider_catalog_validates_transports_and_nextdns_id() {
         })
     };
 
+    // New installations default to Cloudflare Family over DoH.
+    let network = app
+        .admin(
+            Method::GET,
+            "/api/v1/network",
+            None,
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(network.status, StatusCode::OK);
+    assert_eq!(
+        network.body["config"]["dns"]["provider"],
+        "cloudflare_family"
+    );
+    assert_eq!(network.body["config"]["dns"]["protocol"], "doh");
+
+    // Plain DNS is refused when the provider offers encryption.
+    let plain_encrypted = app
+        .admin(
+            Method::PUT,
+            "/api/v1/network/dns",
+            Some(update("cloudflare_family", "plain", None)),
+            &session.cookies,
+            Some(&session.csrf),
+        )
+        .await;
+    assert_eq!(
+        plain_encrypted.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        plain_encrypted.text
+    );
+
     // Unsupported transport for the provider.
     let rejected = app
         .admin(

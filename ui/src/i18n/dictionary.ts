@@ -371,6 +371,8 @@ const es = {
   'net.dns.catalogCount': '{{count}} variantes gratuitas',
   'net.dns.vendorAll': 'Todos los proveedores',
   'net.dns.plain': 'Sin cifrar',
+  'net.dns.encryptedPreferred':
+    'Cifrado primero: DoH o DoT siempre que el proveedor lo ofrezca.',
   'net.dns.plainWarning':
     'El DNS sin cifrar viaja en claro. Úsalo solo para proveedores heredados que no ofrecen DoH/DoT.',
   'net.dns.nextdnsId': 'ID de configuración de NextDNS',
@@ -1254,6 +1256,8 @@ const en: Dictionary = {
   'net.dns.catalogCount': '{{count}} free variants',
   'net.dns.vendorAll': 'All providers',
   'net.dns.plain': 'Unencrypted',
+  'net.dns.encryptedPreferred':
+    'Encryption first: DoH or DoT whenever the provider offers it.',
   'net.dns.plainWarning':
     'Unencrypted DNS travels in clear text. Only use it for legacy providers without DoH/DoT.',
   'net.dns.nextdnsId': 'NextDNS configuration ID',

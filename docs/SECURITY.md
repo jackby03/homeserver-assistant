@@ -85,6 +85,11 @@ covered by golden tests:
 7. The ruleset is validated with `nft -c -f` before being applied; the daemon
    never applies a partially rendered ruleset.
 
+DNS encryption is mandatory whenever the selected provider offers it: new
+installs default to **Cloudflare Family over DoH**, plain DNS is restricted to
+legacy providers without DoH/DoT, and legacy configurations using plain DNS with
+an encrypted-capable provider are migrated to DoH at startup.
+
 Apps deployed to the DMZ do not receive a LAN reverse-proxy hostname. External
 publication happens only through outbound tunnels (Cloudflare Tunnel/WireGuard)
 with no inbound port forwarding on the home router.
@@ -189,3 +194,4 @@ last N entries; entries are never edited or deleted through the API.
   the LAN by design. Review `nft list ruleset` and the audit log.
 - **Stolen device:** full-disk encryption and BIOS password are the only
   protections for the data at rest; rotate all credentials.
+
