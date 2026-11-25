@@ -16,6 +16,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -95,6 +96,17 @@ if PIPER_MODEL.is_file():
     except Exception as error:
         print(f"piper voice failed to load: {error}", file=sys.stderr)
 
+
+
+
+_EMOJI_RE = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D\u20E3]+")
+
+
+def sanitize_for_speech(text: str) -> str:
+    """Remove emojis/markdown that a TTS engine would read aloud."""
+    text = _EMOJI_RE.sub("", text)
+    text = re.sub(r"[*_`#>|~]+", "", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 def decode_audio(data: bytes) -> np.ndarray:
     container = av.open(io.BytesIO(data))
@@ -353,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length))
-            text = str(payload.get("text", "")).strip()[:2_000]
+            text = sanitize_for_speech(str(payload.get("text", "")))[:2_000]
         except Exception:
             self._json(400, {"error": "invalid JSON"})
             return

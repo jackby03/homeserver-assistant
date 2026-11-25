@@ -73,7 +73,7 @@ Rules:
   except along the arrows above.
 - **Ports and adapters.** `hs-tools` defines small port traits
   (`RuntimeControl`, `DomoticsControl`, `AudioControl`, `SystemControl`,
-  `WebhookClient`, `MemoryStore`, `TimerControl`); `hs-daemon` implements them with real adapters. That keeps
+  `WebhookClient`, `MemoryStore`, `TimerControl`, `NewsSearch`); `hs-daemon` implements them with real adapters. That keeps
   the security-critical permission check independent from infrastructure.
 - **Composition root.** Only `hs-daemon` knows concrete adapters and their
   configuration. Domain crates accept injected trait objects.
@@ -101,7 +101,8 @@ Microphone ──> local helper (voice/, local STT) ── transcript only ─�
    └─> browser/helper POST /kiosk/agent/query ──> agent loop
         └─> tools (permission-checked) ──> Home Assistant / music / runtime
              ├─> memory.* (per-profile JSON memory in data/memory/)
-             └─> timer.* (persistent reminders in data/timers.json, fired by the scheduler)
+             ├─> timer.* (persistent reminders in data/timers.json, fired by the scheduler)
+             └─> news.latest (read-only Google News RSS, no API key)
 ```
 
 ### 4.3 Local-first assistant routing

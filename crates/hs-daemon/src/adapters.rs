@@ -197,5 +197,6 @@ pub fn build_ports(
         webhooks: Arc::new(WebhookAdapter { http }),
         memory: Arc::new(crate::memory::FileMemoryStore::new(data_dir.join("memory"))),
         timers,
+        news: Arc::new(crate::news::NewsAdapter::new()),
     }
 }

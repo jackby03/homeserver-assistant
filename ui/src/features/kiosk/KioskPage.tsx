@@ -116,6 +116,20 @@ interface ChatEntry {
   text: string;
 }
 
+/**
+ * Local TTS reads punctuation and emojis aloud. Keep assistant text clean for
+ * both the voice engine and the chat bubble; user input is left untouched.
+ */
+const SPEECH_UNSAFE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}\u{20E3}]/gu;
+
+function sanitizeAssistantText(text: string): string {
+  return text
+    .replace(SPEECH_UNSAFE, '')
+    .replace(/[*_`#>|~]+/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function KioskPage(): React.JSX.Element {
   const { t, language } = useI18n();
   const toast = useToast();
@@ -269,7 +283,7 @@ export function KioskPage(): React.JSX.Element {
   /* Data ------------------------------------------------------------------- */
 
   const pushChat = useCallback((role: 'user' | 'assistant', text: string): void => {
-    const trimmed = text.trim();
+    const trimmed = role === 'assistant' ? sanitizeAssistantText(text) : text.trim();
     if (trimmed === '') return;
     chatSequence.current += 1;
     setChatLog((current) => [
@@ -283,7 +297,7 @@ export function KioskPage(): React.JSX.Element {
 
   const speakReply = useCallback(
     (text: string): void => {
-      const trimmed = text.trim();
+      const trimmed = sanitizeAssistantText(text);
       if (trimmed === '') return;
       const now = Date.now();
       if (lastSpoken.current.text === trimmed && now - lastSpoken.current.at < 4_000) {
@@ -622,16 +636,17 @@ export function KioskPage(): React.JSX.Element {
     try {
       const history = conversation.slice(-20);
       const response = await kioskApi.query(text, history);
+      const reply = sanitizeAssistantText(response.reply);
       setConversation((current) =>
         [
           ...current,
           { role: 'user' as const, content: text },
-          { role: 'assistant' as const, content: response.reply },
+          { role: 'assistant' as const, content: reply },
         ].slice(-24),
       );
       setAgentTrace(response.tool_trace ?? []);
-      pushChat('assistant', response.reply);
-      speakReply(response.reply);
+      pushChat('assistant', reply);
+      speakReply(reply);
       setLive((current) => ({ ...current, agentActivity: 'speaking' }));
       setAvatarState('speaking');
       window.clearTimeout(speechTimer.current);
