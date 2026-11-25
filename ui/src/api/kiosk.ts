@@ -93,6 +93,20 @@ const STT_BASE_URL = (
  * Chrome/MediaRecorder uses the same Windows capture path as Audacity, so it
  * works with the G435 where PortAudio's DirectSound/MME streams were corrupt.
  */
+export async function detectKioskWake(blob: Blob): Promise<boolean> {
+  const response = await fetch(`${STT_BASE_URL}/wake`, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+    body: blob,
+  });
+  if (!response.ok) {
+    throw new Error(`local wake detector failed (HTTP ${response.status})`);
+  }
+  const data = (await response.json()) as { wake?: boolean; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.wake === true;
+}
+
 export async function transcribeKioskAudio(blob: Blob): Promise<string> {
   const response = await fetch(`${STT_BASE_URL}/transcribe`, {
     method: 'POST',

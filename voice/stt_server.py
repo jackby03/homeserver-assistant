@@ -23,6 +23,7 @@ from pathlib import Path
 
 import av
 import numpy as np
+from vosk import KaldiRecognizer, Model
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -37,6 +38,23 @@ ALLOWED_ORIGINS = {
     "http://localhost:5173",
 }
 MODEL = wakeword.WhisperModel("base", device="cpu", compute_type="int8")
+
+VOSK_MODEL_PATH = Path(
+    os.environ.get(
+        "HS_VOSK_MODEL", str(ROOT.parent / ".demo" / "vosk-model-small-es-0.42")
+    )
+)
+VOSK_MODEL: Model | None = None
+if VOSK_MODEL_PATH.is_dir():
+    try:
+        VOSK_MODEL = Model(str(VOSK_MODEL_PATH))
+        print(f"vosk wake model loaded from {VOSK_MODEL_PATH}")
+    except Exception as error:
+        print(f"vosk model failed to load: {error}", file=sys.stderr)
+else:
+    print(f"vosk model not found at {VOSK_MODEL_PATH}", file=sys.stderr)
+
+WAKE_GRAMMAR = '["hola aura", "[unk]"]'
 
 PIPER_EXE = Path(
     os.environ.get("HS_PIPER_EXE", str(Path(sys.executable).with_name("piper.exe")))
@@ -84,6 +102,35 @@ def synthesize(text: str) -> bytes:
             detail = (result.stderr or result.stdout).strip()[:300]
             raise RuntimeError(f"piper failed: {detail}")
         return output.read_bytes()
+
+
+def detect_wake(audio: np.ndarray) -> dict:
+    """Run a Vosk grammar recognizer and report whether the wake phrase matched."""
+    if VOSK_MODEL is None:
+        raise RuntimeError("vosk wake model is not available")
+    pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+    recognizer = KaldiRecognizer(VOSK_MODEL, 16_000, WAKE_GRAMMAR)
+    recognizer.SetWords(True)
+    words: list[dict] = []
+    chunks: list[str] = []
+    for offset in range(0, len(pcm), 32_000):
+        if recognizer.AcceptWaveform(pcm[offset : offset + 32_000]):
+            payload = json.loads(recognizer.Result())
+            chunks.append(str(payload.get("text", "")))
+            words.extend(payload.get("result", []))
+    final = json.loads(recognizer.FinalResult())
+    chunks.append(str(final.get("text", "")))
+    words.extend(final.get("result", []))
+    text = " ".join(part for part in chunks if part).strip()
+    confident = [
+        word
+        for word in words
+        if float(word.get("conf", 0.0)) >= 0.45
+        and str(word.get("word", "")).lower() in {"hola", "aura"}
+    ]
+    confident_words = {str(word.get("word", "")).lower() for word in confident}
+    wake = "hola" in confident_words and "aura" in confident_words
+    return {"wake": wake, "text": text, "words": words}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -143,9 +190,33 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(wav)
 
+    def _wake(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > 8 * 1024 * 1024:
+            self._json(400, {"error": "invalid audio length"})
+            return
+        data = self.rfile.read(length)
+        try:
+            audio = decode_audio(data)
+        except Exception as error:
+            self._json(400, {"error": f"cannot decode audio: {error}"})
+            return
+        if audio.size < 4_000:
+            self._json(200, {"wake": False, "text": ""})
+            return
+        try:
+            result = detect_wake(audio)
+        except Exception as error:
+            self._json(500, {"error": str(error)[:300]})
+            return
+        self._json(200, result)
+
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         if self.path == "/speak":
             self._speak()
+            return
+        if self.path == "/wake":
+            self._wake()
             return
         if self.path != "/transcribe":
             self._json(404, {"error": "not found"})
@@ -185,3 +256,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
