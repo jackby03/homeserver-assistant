@@ -60,7 +60,7 @@ WAKE_IDLE_TIMEOUT = 5.0
 QUERY_MAX_SECONDS = 9.0
 SILENCE_SECONDS = 1.2
 DEFAULT_THRESHOLD = 0.004
-DEFAULT_ASSISTANT_NAME = "Aurora"
+DEFAULT_ASSISTANT_NAME = "Bober"
 OUTPUT_DEVICE: int | str | None = None
 
 # Console output is UTF-8 even on Windows consoles with a legacy code page;

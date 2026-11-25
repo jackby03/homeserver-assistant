@@ -680,7 +680,7 @@ impl VoiceActivationMode {
 
 /// Always-on voice assistant configuration.
 ///
-/// The name is the wake word: the household says `"Aurora, ..."` and the
+/// The name is the wake word: the household says `"Bober, ..."` and the
 /// daemon matches the transcript locally. Audio never leaves the appliance; an
 /// optional local STT helper produces the transcript.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -703,7 +703,7 @@ pub struct VoiceConfig {
 impl Default for VoiceConfig {
     fn default() -> Self {
         Self {
-            assistant_name: "Aurora".to_owned(),
+            assistant_name: "Bober".to_owned(),
             wake_word_enabled: true,
             activation_mode: VoiceActivationMode::Both,
             sensitivity: 0.6,
@@ -736,7 +736,7 @@ impl VoiceConfig {
         Ok(())
     }
 
-    /// Phrase the household should say to wake the assistant, e.g. `"Aurora"`.
+    /// Phrase the household should say to wake the assistant, e.g. `"Bober"`.
     #[must_use]
     pub fn wake_phrase(&self) -> String {
         self.assistant_name.trim().to_owned()
@@ -937,8 +937,8 @@ mod tests {
     #[test]
     fn voice_defaults_are_valid_and_customizable() {
         let mut config = valid_config();
-        assert_eq!(config.voice.assistant_name, "Aurora");
-        assert_eq!(config.voice.wake_phrase(), "Aurora");
+        assert_eq!(config.voice.assistant_name, "Bober");
+        assert_eq!(config.voice.wake_phrase(), "Bober");
         config.voice.assistant_name = "Jarvis".to_owned();
         config.voice.sensitivity = 0.9;
         config.voice.activation_mode = VoiceActivationMode::WakeWord;
@@ -980,7 +980,7 @@ mod tests {
         let mut config = valid_config();
         config.voice.assistant_name = "x".to_owned();
         assert!(config.validate().is_err());
-        config.voice.assistant_name = "Aurora".to_owned();
+        config.voice.assistant_name = "Bober".to_owned();
         config.voice.sensitivity = 1.5;
         assert!(config.validate().is_err());
         config.voice.sensitivity = 0.5;

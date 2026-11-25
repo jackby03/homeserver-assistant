@@ -14,14 +14,13 @@ import { agentApi } from '@/api/agent';
 import { profilesApi } from '@/api/profiles';
 import type {
   Avatar,
-  AvatarShape,
   AvatarState,
   Profile,
   ProfileRole,
   Tone,
   ToolDefinition,
 } from '@/api/types';
-import { AvatarFigure } from '@/components/Avatar';
+import { BoopAvatar } from '@/components/BoopAvatar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { EmptyState } from '@/components/EmptyState';
 import { Field, Segmented, Toggle } from '@/components/Field';
@@ -36,7 +35,6 @@ import { isValidHexColor } from '@/lib/color';
 import { useResource } from '@/lib/use-resource';
 import { useToast } from '@/state/ToastProvider';
 
-const SHAPES: AvatarShape[] = ['circle', 'squircle', 'cloud', 'cone', 'droplet'];
 
 const ROLE_KEYS: Record<ProfileRole, DictKey> = {
   owner: 'prof.role.owner',
@@ -169,7 +167,7 @@ export function ProfilesPage(): React.JSX.Element {
               />
               <div className="relative flex items-start gap-4">
                 <div className="shrink-0">
-                  <AvatarFigure avatar={profile.avatar} state="idle" size={92} />
+                  <BoopAvatar avatar={profile.avatar} state="idle" size={92} decorative />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="truncate font-display text-[17px] font-medium text-ink-50">{profile.name}</h2>
@@ -412,32 +410,11 @@ function ProfileEditor({ profile, tools, onClose, onSaved }: ProfileEditorProps)
 
           <div className="space-y-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
             <p className="text-[13px] font-medium text-ink-100">{t('prof.avatar.title')}</p>
-            <div>
-              <p className="field-label">{t('prof.avatar.shape')}</p>
-              <div className="flex flex-wrap gap-2">
-                {SHAPES.map((shape) => (
-                  <button
-                    key={shape}
-                    type="button"
-                    onClick={() => setAvatar((current) => ({ ...current, shape }))}
-                    aria-pressed={avatar.shape === shape}
-                    title={t(`avatar.shape.${shape}` as DictKey)}
-                    className={cn(
-                      'rounded-xl border p-1.5 transition',
-                      avatar.shape === shape
-                        ? 'border-mint-400/40 bg-mint-400/[0.07]'
-                        : 'border-white/[0.07] hover:border-white/[0.16]',
-                    )}
-                  >
-                    <AvatarFigure
-                      avatar={{ ...avatar, shape }}
-                      state="idle"
-                      size={44}
-                      decorative
-                    />
-                  </button>
-                ))}
-              </div>
+            <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+              <BoopAvatar avatar={avatar} state="idle" size={64} decorative />
+              <p className="text-[11px] leading-relaxed text-ink-500">
+                {t('prof.avatar.boopHint')}
+              </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -453,20 +430,7 @@ function ProfileEditor({ profile, tools, onClose, onSaved }: ProfileEditorProps)
               />
             </div>
 
-            <Field label={`${t('prof.avatar.tilt')} · ${Math.round(avatar.eye_tilt_deg)}°`} htmlFor="avatar-tilt">
-              <input
-                id="avatar-tilt"
-                type="range"
-                min="-45"
-                max="45"
-                step="1"
-                value={avatar.eye_tilt_deg}
-                onChange={(event) =>
-                  setAvatar((current) => ({ ...current, eye_tilt_deg: Number(event.target.value) }))
-                }
-                className="h-11 w-full cursor-pointer accent-[#6ee7ff]"
-              />
-            </Field>
+
 
             <div>
               <p className="field-label">{t('prof.avatar.state')}</p>
@@ -566,7 +530,7 @@ function ProfileEditor({ profile, tools, onClose, onSaved }: ProfileEditorProps)
         {/* Preview --------------------------------------------------------- */}
         <aside className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
           <p className="section-label">{t('prof.avatar.preview')}</p>
-          <AvatarFigure avatar={avatar} state={previewState} size={190} />
+          <BoopAvatar avatar={avatar} state={previewState} size={190} />
           <div className="w-full space-y-2 text-center">
             <p className="font-display text-[16px] font-medium text-ink-50">{name === '' ? '—' : name}</p>
             <div className="flex flex-wrap justify-center gap-1.5">
@@ -641,3 +605,5 @@ function ColorPicker({
     </Field>
   );
 }
+
+
