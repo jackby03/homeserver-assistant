@@ -295,4 +295,3 @@ mod tests {
         assert_eq!(normalize_phrase("..."), "");
     }
 }
-
