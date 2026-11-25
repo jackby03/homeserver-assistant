@@ -156,6 +156,16 @@ written to disk and leaves nothing but the loopback request.
 On this Windows demo the server is already running:
 `.\.demo\voice-venv\Scripts\python.exe voice\stt_server.py`.
 
+### Continuous browser wake word
+
+The kiosk chat panel has a small **waveform toggle** (next to the close button)
+that starts continuous listening through Chrome. Every 2.5 s clip is transcribed
+by the loopback server and sent to `/kiosk/wake`; when the configured name is
+recognized the kiosk records the request and routes it through the normal
+local/LLM agent. This uses the same WASAPI/default-microphone path as Audacity
+and Chrome, avoiding the corrupt PortAudio/WDM capture on this host. The old
+Python wake-word listener remains available for Linux appliances.
+
 ## Windows development demo (local microphone)
 
 On a Windows development machine the same helper runs against the dev daemon:
@@ -224,6 +234,7 @@ configurable (`es`/`en`).
 - Transcripts are sent only to the loopback daemon, which does not persist them.
 - The wake-word matcher and the permission checks run in Rust on the appliance.
 - No audio is written to disk, logged, or sent to any external service.
+
 
 
 

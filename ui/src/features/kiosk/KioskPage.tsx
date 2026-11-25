@@ -141,6 +141,9 @@ export function KioskPage(): React.JSX.Element {
   const [conversation, setConversation] = useState<KioskHistoryEntry[]>([]);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [continuous, setContinuous] = useState(false);
+  const continuousRef = useRef(false);
+  const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const chatTimer = useRef(0);
@@ -425,7 +428,15 @@ export function KioskPage(): React.JSX.Element {
     window.setTimeout(() => queryInput.current?.focus(), 50);
   };
 
+  const stopContinuous = (): void => {
+    continuousRef.current = false;
+    setContinuous(false);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  };
+
   const closeTalk = (): void => {
+    stopContinuous();
     setTalkOpen(false);
     setListening(false);
     setAvatarState('idle');
@@ -469,6 +480,80 @@ export function KioskPage(): React.JSX.Element {
       setLive((current) => ({ ...current, agentActivity: 'error' }));
     } finally {
       setQuerying(false);
+    }
+  };
+
+  const recordClip = (stream: MediaStream, milliseconds: number): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const chunks: Blob[] = [];
+      const preferred = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : undefined;
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(
+          stream,
+          preferred === undefined ? undefined : { mimeType: preferred },
+        );
+      } catch (cause) {
+        reject(cause);
+        return;
+      }
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () =>
+        resolve(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+      recorder.start();
+      window.setTimeout(() => {
+        if (recorder.state === 'recording') recorder.stop();
+      }, milliseconds);
+    });
+
+  const continuousLoop = async (stream: MediaStream): Promise<void> => {
+    while (continuousRef.current) {
+      try {
+        const clip = await recordClip(stream, 2_500);
+        if (!continuousRef.current) return;
+        const transcript = await transcribeKioskAudio(clip);
+        if (transcript.trim() === '') continue;
+        const outcome = await kioskApi.wake(transcript);
+        if (!outcome.activated) continue;
+        setAssistantName(outcome.assistant_name);
+        setAvatarState('listening');
+        let query = (outcome.trailing_query ?? '').trim();
+        if (query === '') {
+          const requestClip = await recordClip(stream, 6_000);
+          query = (await transcribeKioskAudio(requestClip)).trim();
+        }
+        if (query !== '') await sendQuery(query);
+      } catch {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+      }
+    }
+  };
+
+  const toggleContinuous = async (): Promise<void> => {
+    if (continuous) {
+      stopContinuous();
+      return;
+    }
+    if (
+      typeof navigator === 'undefined' ||
+      navigator.mediaDevices?.getUserMedia === undefined ||
+      typeof MediaRecorder === 'undefined'
+    ) {
+      pushChat('assistant', t('kiosk.recordUnsupported'));
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      continuousRef.current = true;
+      setContinuous(true);
+      void continuousLoop(stream);
+    } catch {
+      pushChat('assistant', t('kiosk.recordPermission'));
     }
   };
 
@@ -983,14 +1068,30 @@ export function KioskPage(): React.JSX.Element {
                   <p className="text-[10px] text-ink-500">{t('kiosk.hint', { name: assistantName })}</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={closeTalk}
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/[0.06] hover:text-ink-100"
-                aria-label={t('kiosk.close')}
-              >
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void toggleContinuous()}
+                  className={cn(
+                    'grid h-8 w-8 place-items-center rounded-lg transition',
+                    continuous
+                      ? 'bg-mint-400/[0.16] text-mint-300'
+                      : 'text-ink-400 hover:bg-white/[0.06] hover:text-ink-100',
+                  )}
+                  title={continuous ? t('kiosk.continuousOn') : t('kiosk.continuous')}
+                  aria-label={continuous ? t('kiosk.continuousOn') : t('kiosk.continuous')}
+                >
+                  <AudioLines size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={closeTalk}
+                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/[0.06] hover:text-ink-100"
+                  aria-label={t('kiosk.close')}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {chatLog.length > 0 ? (
@@ -1071,7 +1172,11 @@ export function KioskPage(): React.JSX.Element {
                     {t('agent.chat.send')}
                   </button>
                 </form>
-                {recording || transcribing ? (
+                {continuous ? (
+                  <p className="mt-1.5 text-[10.5px] text-mint-300/80">
+                    {t('kiosk.continuousActive')}
+                  </p>
+                ) : recording || transcribing ? (
                   <p className="mt-1.5 text-[10.5px] text-mint-300/80">
                     {transcribing ? t('kiosk.transcribing') : t('kiosk.recording')}
                   </p>

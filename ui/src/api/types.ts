@@ -804,6 +804,14 @@ export interface KioskScene {
   name: string;
 }
 
+export interface KioskWakeOutcome {
+  activated: boolean;
+  assistant_name: string;
+  listening: boolean;
+  trailing_query: string | null;
+  reason: string;
+}
+
 export interface KioskStateResponse {
   device_name: string;
   profile: Profile | null;
