@@ -80,6 +80,14 @@ Rules:
 - **Fail closed.** Missing providers, unavailable runtimes and unconfigured
   services return typed errors; no silent fallbacks on security paths.
 
+## 3.1 Agent personality
+
+`SOUL.md` (repository root) is the stable identity. The daemon seeds it to
+`data/SOUL.md` on first start and loads it into `AgentService`; the prompt
+builder combines it with the profile, local clock, tool rules and safety
+instructions. The runtime block takes precedence over the soul when they
+conflict.
+
 ## 4. Data flow
 
 ### 4.1 Admin request
