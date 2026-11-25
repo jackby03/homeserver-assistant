@@ -216,6 +216,102 @@ impl MemoryStore for EphemeralMemoryStore {
         Ok(entries.len() != before)
     }
 }
+/// A pending reminder/timer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimerEntry {
+    /// Stable timer id.
+    pub id: String,
+    /// Human label spoken when it fires.
+    pub label: String,
+    /// Due time as Unix seconds UTC.
+    pub due_at: u64,
+}
+
+/// Schedule reminders that the daemon fires through the kiosk.
+#[async_trait]
+pub trait TimerControl: Send + Sync {
+    /// Create a timer for `profile_id` that fires after `duration_secs`.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when persistence fails.
+    async fn create(
+        &self,
+        profile_id: &str,
+        label: &str,
+        duration_secs: u64,
+    ) -> Result<TimerEntry, String>;
+
+    /// List pending timers for `profile_id`.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when persistence fails.
+    async fn list(&self, profile_id: &str) -> Result<Vec<TimerEntry>, String>;
+
+    /// Cancel a timer owned by `profile_id`; returns whether it existed.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when persistence fails.
+    async fn cancel(&self, profile_id: &str, id: &str) -> Result<bool, String>;
+}
+
+/// Small in-memory [`TimerControl`] used by tests and ephemeral runs.
+#[derive(Debug, Default)]
+pub struct EphemeralTimerStore {
+    timers: std::sync::Mutex<Vec<(String, TimerEntry)>>,
+    next: std::sync::atomic::AtomicU64,
+}
+
+#[async_trait]
+impl TimerControl for EphemeralTimerStore {
+    async fn create(
+        &self,
+        profile_id: &str,
+        label: &str,
+        duration_secs: u64,
+    ) -> Result<TimerEntry, String> {
+        let id = format!(
+            "timer-{}",
+            self.next.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        );
+        let due_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_secs()
+            + duration_secs;
+        let entry = TimerEntry {
+            id,
+            label: label.to_owned(),
+            due_at,
+        };
+        self.timers
+            .lock()
+            .map_err(|_| "timer lock poisoned".to_owned())?
+            .push((profile_id.to_owned(), entry.clone()));
+        Ok(entry)
+    }
+
+    async fn list(&self, profile_id: &str) -> Result<Vec<TimerEntry>, String> {
+        Ok(self
+            .timers
+            .lock()
+            .map_err(|_| "timer lock poisoned".to_owned())?
+            .iter()
+            .filter(|(owner, _)| owner == profile_id)
+            .map(|(_, entry)| entry.clone())
+            .collect())
+    }
+
+    async fn cancel(&self, profile_id: &str, id: &str) -> Result<bool, String> {
+        let mut timers = self
+            .timers
+            .lock()
+            .map_err(|_| "timer lock poisoned".to_owned())?;
+        let before = timers.len();
+        timers.retain(|(owner, entry)| !(owner == profile_id && entry.id == id));
+        Ok(timers.len() != before)
+    }
+}
+
 /// Bundle of outbound adapters required to execute tools.
 ///
 /// Cloning is cheap: every field is an `Arc`.
@@ -233,6 +329,8 @@ pub struct ToolPorts {
     pub webhooks: Arc<dyn WebhookClient>,
     /// Per-profile assistant memory.
     pub memory: Arc<dyn MemoryStore>,
+    /// Per-profile reminders/timers.
+    pub timers: Arc<dyn TimerControl>,
 }
 
 impl std::fmt::Debug for ToolPorts {

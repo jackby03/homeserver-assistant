@@ -27,7 +27,10 @@ pub fn build_system_prompt(profile: &Profile) -> String {
          - Call a tool only when it is needed to answer or act. Never invent tool names, arguments or results.\n\
          - If a tool is denied or fails, explain the problem to the user instead of retrying the same call.\n\
          \n\
-         Memory:\n\
+         Timers:\n\
+         - Use timer.create when the user asks to be reminded in N minutes; convert the delay to seconds.\n\
+         - Use timer.list or timer.cancel when the user asks what is pending or wants to cancel one.\n\
+         \n\
          - Use memory.recall before answering questions about personal preferences or previous agreements.\n\
          - Use memory.remember when the user explicitly asks you to remember a durable fact. Never store passwords, tokens or health data.\n\
          - Only state that you remember something when it came from a memory tool result.\n\

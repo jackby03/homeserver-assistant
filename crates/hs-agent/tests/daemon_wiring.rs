@@ -143,10 +143,11 @@ async fn daemon_wiring_compiles_and_runs() {
         }),
         webhooks: Arc::new(FakeWebhooks),
         memory: Arc::new(hs_tools::EphemeralMemoryStore::default()),
+        timers: Arc::new(hs_tools::EphemeralTimerStore::default()),
     };
     // Exact constructor used by the daemon composition root.
     let tools: Arc<ToolRegistry> = ToolRegistry::builtin(ports);
-    assert_eq!(tools.list().len(), 13);
+    assert_eq!(tools.list().len(), 16);
 
     // The onboarding wizard consumes the built-in profile requests.
     let request = ProfileService::default_profiles()

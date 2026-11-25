@@ -528,6 +528,171 @@ impl Tool for MemoryForget {
     }
 }
 
+fn timer_label(map: &serde_json::Map<String, Value>) -> ToolResult<String> {
+    let label = args::required_string(map, "label")?;
+    let label = label.trim();
+    if label.is_empty() || label.chars().count() > 200 {
+        return Err(ToolError::InvalidArguments(
+            "label must be between 1 and 200 characters".to_owned(),
+        ));
+    }
+    Ok(label.to_owned())
+}
+
+struct TimerCreate;
+
+#[async_trait]
+impl Tool for TimerCreate {
+    fn name(&self) -> &'static str {
+        "timer.create"
+    }
+
+    fn description(&self) -> &'static str {
+        "Create a reminder that the assistant will speak at the due time (for example 'recuérdame sacar la basura en 20 minutos')."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "description": "What to remind the user about."
+                },
+                "seconds": {
+                    "type": "integer",
+                    "description": "Delay in seconds from now (10 to 86400).",
+                    "minimum": 10,
+                    "maximum": 86400
+                }
+            },
+            "required": ["label", "seconds"],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, _ports: &ToolPorts, _arguments: Value) -> ToolResult<Value> {
+        Err(ToolError::InvalidArguments(
+            "timer tools require the active profile".to_owned(),
+        ))
+    }
+
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        profile: &Profile,
+    ) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let label = timer_label(&map)?;
+        let seconds = map
+            .get("seconds")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| ToolError::InvalidArguments("missing `seconds`".to_owned()))?;
+        if !(10..=86_400).contains(&seconds) {
+            return Err(ToolError::InvalidArguments(
+                "seconds must be between 10 and 86400".to_owned(),
+            ));
+        }
+        let entry = ports
+            .timers
+            .create(&profile.id.to_string(), &label, seconds)
+            .await
+            .map_err(ToolError::Upstream)?;
+        Ok(json!({
+            "status": "scheduled",
+            "id": entry.id,
+            "label": entry.label,
+            "due_at": entry.due_at,
+        }))
+    }
+}
+
+struct TimerList;
+
+#[async_trait]
+impl Tool for TimerList {
+    fn name(&self) -> &'static str {
+        "timer.list"
+    }
+
+    fn description(&self) -> &'static str {
+        "List the reminders that are still pending for this profile."
+    }
+
+    fn parameters(&self) -> Value {
+        no_arguments()
+    }
+
+    async fn execute(&self, _ports: &ToolPorts, _arguments: Value) -> ToolResult<Value> {
+        Err(ToolError::InvalidArguments(
+            "timer tools require the active profile".to_owned(),
+        ))
+    }
+
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        profile: &Profile,
+    ) -> ToolResult<Value> {
+        let _ = args::object(arguments)?;
+        let timers = ports
+            .timers
+            .list(&profile.id.to_string())
+            .await
+            .map_err(ToolError::Upstream)?;
+        let count = timers.len();
+        Ok(json!({ "timers": timers, "count": count }))
+    }
+}
+
+struct TimerCancel;
+
+#[async_trait]
+impl Tool for TimerCancel {
+    fn name(&self) -> &'static str {
+        "timer.cancel"
+    }
+
+    fn description(&self) -> &'static str {
+        "Cancel a pending reminder by its id."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "id": { "type": "string", "description": "Timer id returned by timer.create." }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, _ports: &ToolPorts, _arguments: Value) -> ToolResult<Value> {
+        Err(ToolError::InvalidArguments(
+            "timer tools require the active profile".to_owned(),
+        ))
+    }
+
+    async fn execute_for_profile(
+        &self,
+        ports: &ToolPorts,
+        arguments: Value,
+        profile: &Profile,
+    ) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let id = args::required_string(&map, "id")?;
+        let cancelled = ports
+            .timers
+            .cancel(&profile.id.to_string(), &id)
+            .await
+            .map_err(ToolError::Upstream)?;
+        Ok(json!({ "cancelled": cancelled, "id": id }))
+    }
+}
+
 /// Instantiate every built-in tool.
 pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
     vec![
@@ -544,6 +709,9 @@ pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(MemoryRemember),
         Arc::new(MemoryRecall),
         Arc::new(MemoryForget),
+        Arc::new(TimerCreate),
+        Arc::new(TimerList),
+        Arc::new(TimerCancel),
     ]
 }
 
@@ -573,6 +741,9 @@ mod tests {
             "memory.remember".to_owned(),
             "memory.recall".to_owned(),
             "memory.forget".to_owned(),
+            "timer.create".to_owned(),
+            "timer.list".to_owned(),
+            "timer.cancel".to_owned(),
         ]
     }
 
@@ -580,7 +751,7 @@ mod tests {
     async fn every_builtin_tool_has_a_schema() {
         let (registry, _counts) = registry();
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 13);
+        assert_eq!(descriptors.len(), 16);
         let names: Vec<String> = descriptors.iter().map(|tool| tool.name.clone()).collect();
         let mut expected = all_tools();
         expected.sort();
@@ -618,6 +789,37 @@ mod tests {
             .invoke(&profile, "memory.recall", json!({}))
             .await
             .expect("recall");
+        assert_eq!(empty.output["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn timer_tools_create_list_and_cancel() {
+        let (registry, _counts) = registry();
+        let profile = profile_with_tools(&["timer.create", "timer.list", "timer.cancel"]);
+        let created = registry
+            .invoke(
+                &profile,
+                "timer.create",
+                json!({"label": "sacar la basura", "seconds": 60}),
+            )
+            .await
+            .expect("create");
+        assert_eq!(created.output["status"], "scheduled");
+        let id = created.output["id"].as_str().expect("id").to_owned();
+        let listed = registry
+            .invoke(&profile, "timer.list", json!({}))
+            .await
+            .expect("list");
+        assert_eq!(listed.output["count"], 1);
+        let cancelled = registry
+            .invoke(&profile, "timer.cancel", json!({"id": id}))
+            .await
+            .expect("cancel");
+        assert_eq!(cancelled.output["cancelled"], true);
+        let empty = registry
+            .invoke(&profile, "timer.list", json!({}))
+            .await
+            .expect("list");
         assert_eq!(empty.output["count"], 0);
     }
 

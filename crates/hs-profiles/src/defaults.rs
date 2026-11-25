@@ -22,6 +22,9 @@ const OWNER_TOOLS: &[&str] = &[
     "memory.remember",
     "memory.recall",
     "memory.forget",
+    "timer.create",
+    "timer.list",
+    "timer.cancel",
 ];
 
 /// Adults may do everything except stop running workloads.
@@ -38,6 +41,9 @@ const ADULT_TOOLS: &[&str] = &[
     "memory.remember",
     "memory.recall",
     "memory.forget",
+    "timer.create",
+    "timer.list",
+    "timer.cancel",
 ];
 
 /// Children get read-only status plus media control.

@@ -109,11 +109,16 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
 
     let profiles = Arc::new(ProfileService::new(Arc::clone(&db), Arc::clone(&secrets)));
 
+    let events = EventBus::default();
+    let timers = crate::timers::TimerService::new(&daemon.data_dir, events.clone());
+    timers.start();
+
     let ports = adapters::build_ports(
         Arc::clone(&runtime),
         Arc::clone(&system),
         Arc::clone(&ha),
         &daemon.data_dir,
+        timers,
     );
     let tools = ToolRegistry::builtin(ports);
     let factory = Arc::new(DefaultFactory::default());
@@ -127,7 +132,6 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
         config.agent.max_tool_steps,
     ));
 
-    let events = EventBus::default();
     let kiosk = Arc::new(KioskManager::new(
         events.clone(),
         config.device.name.clone(),

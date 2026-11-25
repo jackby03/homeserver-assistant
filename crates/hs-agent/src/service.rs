@@ -119,7 +119,8 @@ fn user_confirmed_destructive_action(messages: &[ChatMessage]) -> bool {
 /// first user message (the frontend resends history each turn). This keeps every
 /// turn of the same conversation on the same gateway route without persisting
 /// conversations server-side.
-fn conversation_session_id(profile_id: Uuid, messages: &[ChatMessage]) -> String {    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis.
+fn conversation_session_id(profile_id: Uuid, messages: &[ChatMessage]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a 64-bit offset basis.
     for byte in profile_id.as_bytes().iter().chain(
         messages
             .iter()
@@ -832,6 +833,7 @@ mod tests {
             }),
             webhooks: Arc::new(UnusedWebhooks),
             memory: Arc::new(hs_tools::EphemeralMemoryStore::default()),
+            timers: Arc::new(hs_tools::EphemeralTimerStore::default()),
         })
     }
 
@@ -1024,8 +1026,7 @@ mod tests {
             .await
             .expect("chat should succeed");
         assert_eq!(response.tool_trace.len(), 1);
-        assert!(response
-            .tool_trace[0]
+        assert!(response.tool_trace[0]
             .error
             .as_deref()
             .is_some_and(|error| error.contains("confirmation required")));
