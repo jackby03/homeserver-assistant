@@ -195,17 +195,18 @@ def choose_output_device() -> int | str | None:
 
 
 def stream_probe_level(device: int, attempts: int = 6) -> float | None:
-    """Probe with the same 512-sample blocks the streaming VAD uses.
+    """Probe with the real 512-sample streaming blocks and return their mean.
 
-    Some host APIs (DirectSound on this host) report signal for long buffers but
-    return digital silence for short blocks, so selection must use the real
-    streaming block size.
+    Host APIs are inconsistent on Windows: MME can return digital silence for
+    short blocks while WASAPI/DirectSound stream fine (and vice versa). Scoring
+    by the mean of several blocks avoids selecting a device from a single lucky
+    spike.
     """
     levels: list[float] = []
     for _ in range(attempts):
         try:
             audio = sd.rec(
-                1536,  # 32 ms at the device's native 48 kHz
+                4800,  # 100 ms at 48 kHz; reliable on every Windows host API
                 samplerate=CAPTURE_RATE,
                 channels=1,
                 dtype="float32",
@@ -215,7 +216,7 @@ def stream_probe_level(device: int, attempts: int = 6) -> float | None:
             levels.append(rms(downsample_to_target(audio.flatten())))
         except Exception:
             return None
-    return max(levels) if levels else None
+    return sum(levels) / len(levels) if levels else None
 
 
 def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | None:
@@ -360,9 +361,9 @@ def record_utterance(
     With Silero VAD, speech is detected by a neural probability instead of a raw
     volume threshold, which is far more robust with quiet headset microphones.
     """
-    chunk_samples = 512  # 32 ms at 16 kHz: Silero VAD window
+    chunk_samples = 1600  # 100 ms at 16 kHz (4800 captured at 48 kHz)
     chunk = chunk_samples / SAMPLE_RATE
-    preroll_frames = 12  # ~0.4 s before speech onset
+    preroll_frames = 4  # 4 x 100 ms before speech onset
     silence = WAKE_SILENCE_SECONDS
     deadline = time.monotonic() + idle_timeout
     if vad is not None:
@@ -375,7 +376,7 @@ def record_utterance(
     peak = 0.0
     while True:
         block = sd.rec(
-            1536,  # 32 ms at 48 kHz; decimated to 512 samples at 16 kHz
+            4800,  # 100 ms at 48 kHz; splits into 3 Silero frames of 512
             samplerate=CAPTURE_RATE,
             channels=1,
             dtype="float32",
@@ -385,10 +386,14 @@ def record_utterance(
         mono = downsample_to_target(block.flatten())
         level = rms(mono)
         peak = max(peak, level)
-        probability = vad.probability(mono) if vad is not None else None
+        probability = None
+        if vad is not None:
+            probabilities = [
+                vad.probability(mono[offset : offset + 512])
+                for offset in (0, 512, 1024)
+            ]
+            probability = max(probabilities)
         energy_gate = max(threshold * 1.5, 0.002)
-        # Silero alone is not reliable on every host/model build; combine it with
-        # an energy gate from the MME stream so clear speech is never ignored.
         is_speech = (probability is not None and probability >= 0.5) or (
             level >= energy_gate
         )
