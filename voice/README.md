@@ -45,7 +45,37 @@ export HF_HUB_OFFLINE=1
 Use a bigger model (`base`, `small`) for better accuracy on low-power hardware
 trade-off. `tiny` runs comfortably on a laptop CPU.
 
-## Wake word engine (Vosk)
+## Wyoming voice stack (active)
+
+The kiosk now speaks to the standard **Wyoming** stack used by Home Assistant
+Voice. It runs as four local loopback services:
+
+| Service | Port | Command |
+|---|---|---|
+| Wake word (Alkove, Spanish) | 10400 | `wyoming-alkove --uri tcp://127.0.0.1:10400 --lang es --word "hola aura" --any-word --models-dir /var/lib/hs-voice/wyoming/alkove` |
+| Speech-to-text (faster-whisper) | 10300 | `wyoming-faster-whisper --uri tcp://127.0.0.1:10300 --data-dir /var/lib/hs-voice/wyoming/whisper --model base --language es --compute-type int8 --beam-size 1` |
+| Text-to-speech (Piper) | 10200 | `wyoming-piper --uri tcp://127.0.0.1:10200 --data-dir /var/lib/hs-voice/wyoming/piper --voice es_MX-claude-high` |
+| Kiosk bridge | 5055 | `python3 voice/stt_server.py` |
+
+`voice/stt_server.py` keeps the browser HTTP contract (`/wake`, `/transcribe`,
+`/transcribe-fast`, `/speak`) and forwards each request to the corresponding
+Wyoming service. Override the endpoints with `WYOMING_WAKE_URI`,
+`WYOMING_ASR_URI` and `WYOMING_TTS_URI`.
+
+If a Wyoming service is unavailable the bridge falls back to the local Vosk /
+faster-whisper / Piper path, so the kiosk keeps working during upgrades. Point
+the models at persistent storage (`/var/lib/hs-voice/wyoming`) on the
+appliance; the development demo uses `.demo/wyoming`.
+
+Windows development notes: `wyoming-piper` needs a small
+`NotImplementedError` guard around `loop.add_signal_handler`, and the installed
+PyAV 19 is newer than the version `faster-whisper` expects
+(`metadata_errors` argument), so the demo venv has a local compatibility patch.
+Neither patch is needed on the Linux appliance.
+
+## Wake word fallback (Vosk)
+
+Vosk remains as the offline fallback if the Wyoming wake service is down.
 
 The browser/kiosk wake path uses **Vosk** keyword spotting, the same family of
 engines used by Rhasspy. It runs a small Spanish model with a restricted grammar

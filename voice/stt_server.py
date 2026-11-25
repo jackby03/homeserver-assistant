@@ -12,6 +12,7 @@ disk; transcripts are returned to the local kiosk page.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -27,12 +28,26 @@ import av
 import numpy as np
 from vosk import KaldiRecognizer, Model
 
+try:
+    from wyoming.asr import Transcript
+    from wyoming.audio import AudioChunk, AudioStart, AudioStop
+    from wyoming.client import AsyncClient
+    from wyoming.tts import Synthesize, SynthesizeStop
+    from wyoming.wake import Detection, NotDetected
+
+    WYOMING_AVAILABLE = True
+except ImportError:  # local fallback still works without Wyoming
+    WYOMING_AVAILABLE = False
+
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 import wakeword  # noqa: E402
 
 HOST = "127.0.0.1"
 PORT = 5055
+WYOMING_ASR_URI = os.environ.get("WYOMING_ASR_URI", "tcp://127.0.0.1:10300")
+WYOMING_TTS_URI = os.environ.get("WYOMING_TTS_URI", "tcp://127.0.0.1:10200")
+WYOMING_WAKE_URI = os.environ.get("WYOMING_WAKE_URI", "tcp://127.0.0.1:10400")
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:3000",
     "http://localhost:3000",
@@ -166,6 +181,125 @@ def detect_wake(audio: np.ndarray) -> dict:
     return {"wake": wake, "text": text, "words": words}
 
 
+async def _wyoming_client(uri: str, read_timeout: float = 60.0) -> "AsyncClient":
+    client = AsyncClient.from_uri(
+        uri, connect_timeout=3.0, read_timeout=read_timeout
+    )
+    await client.connect()
+    return client
+
+
+def _pcm16(audio: np.ndarray) -> bytes:
+    return (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+
+
+async def wyoming_transcribe(audio: np.ndarray) -> str:
+    """Transcribe through a Wyoming faster-whisper server."""
+    if not WYOMING_AVAILABLE:
+        raise RuntimeError("wyoming client is not installed")
+    pcm = _pcm16(audio)
+    client = await _wyoming_client(WYOMING_ASR_URI, read_timeout=120.0)
+    try:
+        await client.write_event(
+            AudioStart(rate=16_000, width=2, channels=1).event()
+        )
+        step = 32_000
+        for offset in range(0, len(pcm), step):
+            await client.write_event(
+                AudioChunk(
+                    rate=16_000,
+                    width=2,
+                    channels=1,
+                    audio=pcm[offset : offset + step],
+                ).event()
+            )
+        await client.write_event(AudioStop().event())
+        while True:
+            event = await client.read_event()
+            if event is None:
+                return ""
+            if Transcript.is_type(event.type):
+                return Transcript.from_event(event).text.strip()
+    finally:
+        await client.disconnect()
+
+
+async def wyoming_speak(text: str) -> bytes:
+    """Render text through a Wyoming Piper server and return a WAV."""
+    if not WYOMING_AVAILABLE:
+        raise RuntimeError("wyoming client is not installed")
+    client = await _wyoming_client(WYOMING_TTS_URI, read_timeout=120.0)
+    try:
+        await client.write_event(Synthesize(text=text).event())
+        audio = bytearray()
+        rate, width, channels = 22_050, 2, 1
+        while True:
+            event = await client.read_event()
+            if event is None or SynthesizeStop.is_type(event.type):
+                break
+            if AudioStart.is_type(event.type):
+                start = AudioStart.from_event(event)
+                rate, width, channels = start.rate, start.width, start.channels
+            elif AudioChunk.is_type(event.type):
+                audio.extend(AudioChunk.from_event(event).audio)
+            elif AudioStop.is_type(event.type):
+                break
+    finally:
+        await client.disconnect()
+    if not audio:
+        raise RuntimeError("wyoming tts returned no audio")
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(width)
+        handle.setframerate(rate)
+        handle.writeframes(bytes(audio))
+    return buffer.getvalue()
+
+
+async def wyoming_detect_wake(audio: np.ndarray) -> dict:
+    """Detect a wake word through a Wyoming Alkove server."""
+    if not WYOMING_AVAILABLE:
+        raise RuntimeError("wyoming client is not installed")
+    pcm = _pcm16(audio)
+    # Alkove's default "after a pause" context needs a little lead-in silence.
+    pcm = b"\x00\x00" * 11_200 + pcm
+    client = await _wyoming_client(WYOMING_WAKE_URI, read_timeout=2.0)
+    try:
+        await client.write_event(
+            AudioStart(rate=16_000, width=2, channels=1).event()
+        )
+        step = 32_000
+        for offset in range(0, len(pcm), step):
+            await client.write_event(
+                AudioChunk(
+                    rate=16_000,
+                    width=2,
+                    channels=1,
+                    audio=pcm[offset : offset + step],
+                ).event()
+            )
+        await client.write_event(AudioStop().event())
+        while True:
+            try:
+                event = await client.read_event()
+            except Exception:
+                return {"wake": False, "text": "", "engine": "wyoming-alkove"}
+            if event is None:
+                return {"wake": False, "text": "", "engine": "wyoming-alkove"}
+            if Detection.is_type(event.type):
+                detection = Detection.from_event(event)
+                return {
+                    "wake": True,
+                    "text": detection.name or "hola aura",
+                    "engine": "wyoming-alkove",
+                }
+            if NotDetected.is_type(event.type):
+                return {"wake": False, "text": "", "engine": "wyoming-alkove"}
+    finally:
+        await client.disconnect()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "HomeServerSTT/0.1"
 
@@ -193,7 +327,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server API
         if self.path == "/health":
-            self._json(200, {"ok": True, "engine": "faster-whisper", "model": "base"})
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "engine": "wyoming" if WYOMING_AVAILABLE else "faster-whisper",
+                    "model": "base",
+                    "wyoming": WYOMING_AVAILABLE,
+                },
+            )
         else:
             self._json(404, {"error": "not found"})
 
@@ -212,10 +354,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "empty text"})
             return
         try:
-            wav = synthesize(text)
-        except Exception as error:
-            self._json(500, {"error": str(error)[:300]})
-            return
+            wav = asyncio.run(wyoming_speak(text))
+        except Exception:
+            try:
+                wav = synthesize(text)
+            except Exception as error:
+                self._json(500, {"error": str(error)[:300]})
+                return
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")
         self.send_header("Content-Length", str(len(wav)))
@@ -231,7 +376,10 @@ class Handler(BaseHTTPRequestHandler):
         data = self.rfile.read(length)
         try:
             audio = decode_audio(data)
-            text = transcribe_fast(audio)
+            try:
+                text = asyncio.run(wyoming_transcribe(audio))
+            except Exception:
+                text = transcribe_fast(audio)
         except Exception as error:
             self._json(500, {"error": str(error)[:300]})
             return
@@ -252,7 +400,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"wake": False, "text": ""})
             return
         try:
-            result = detect_wake(audio)
+            try:
+                result = asyncio.run(wyoming_detect_wake(audio))
+            except Exception:
+                result = detect_wake(audio)
         except Exception as error:
             self._json(500, {"error": str(error)[:300]})
             return
@@ -285,15 +436,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"text": ""})
             return
         try:
-            text = wakeword.transcribe(
-                MODEL,
-                audio,
-                "es",
-                None,
-                beam_size=5,
-                vad_filter=False,
-                enhance=False,
-            )
+            try:
+                text = asyncio.run(wyoming_transcribe(audio))
+            except Exception:
+                text = wakeword.transcribe(
+                    MODEL,
+                    audio,
+                    "es",
+                    None,
+                    beam_size=5,
+                    vad_filter=False,
+                    enhance=False,
+                )
         except Exception as error:
             self._json(500, {"error": f"transcription failed: {error}"})
             return
