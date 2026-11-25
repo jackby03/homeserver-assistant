@@ -45,6 +45,33 @@ export HF_HUB_OFFLINE=1
 Use a bigger model (`base`, `small`) for better accuracy on low-power hardware
 trade-off. `tiny` runs comfortably on a laptop CPU.
 
+## Wake word engine (Vosk)
+
+The browser/kiosk wake path uses **Vosk** keyword spotting, the same family of
+engines used by Rhasspy. It runs a small Spanish model with a restricted grammar
+(`["hola aura", "[unk]"]`) on 2 s clips, so Whisper is only used after the wake
+word triggers. This is much more reliable for short names than transcribing idle
+clips and matching text.
+
+```bash
+# 40 MB Spanish model (once)
+curl -L -o vosk-es.zip https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip
+unzip vosk-es.zip -d /var/lib/homecore/models
+export HS_VOSK_MODEL=/var/lib/homecore/models/vosk-model-small-es-0.42
+python3 voice/stt_server.py
+```
+
+`POST /wake` accepts an audio body and returns
+`{"wake": true, "text": "hola aura", "words": [...]}`. The kiosk auto-starts
+continuous listening when Chrome already has microphone permission; the first
+visit still requires the browser's one-time permission click.
+
+Full open-source assistant stacks worth adopting instead of growing this
+custom loop: Rhasspy, OpenVoiceOS, Willow and Home Assistant Voice (Wyoming).
+They all compose wake word + VAD + ASR + intent + TTS; Vosk/openWakeWord and
+Piper are the usual components. See `docs/ARCHITECTURE.md` for the appliance
+boundary and keep the local Rust intent router as the fast path.
+
 ## Model size guide (local, int8 CPU)
 
 | Model | Disk | RAM (approx.) | Accuracy / speed |
