@@ -154,6 +154,18 @@ def sample_level(device: int, seconds: float = 0.5) -> float | None:
         return None
 
 
+def measure_noise_floor(device: str | int | None) -> float | None:
+    """Measure a short, quiet noise floor for the selected microphone."""
+    levels: list[float] = []
+    for _ in range(3):
+        try:
+            levels.append(rms(record_window(0.25, device)))
+        except Exception as error:
+            print(f"[wakeword] noise measurement failed: {error}", file=sys.stderr)
+            return None
+    return min(levels) if levels else None
+
+
 def choose_output_device() -> int | str | None:
     """Use the G435 headset output (the only test output) when available."""
     try:
@@ -172,17 +184,21 @@ def choose_output_device() -> int | str | None:
         return None
 
 
-def choose_input_device() -> tuple[int, float] | None:
-    """Pick the input device with the strongest live signal."""
+def choose_input_device(name_filter: str | None = None) -> tuple[int, float] | None:
+    """Pick the strongest input device, optionally filtered by name (G435)."""
     best: tuple[float, int] | None = None
+    wanted = (name_filter or "").lower()
     for index, device in input_devices():
+        if wanted and wanted not in device["name"].lower():
+            continue
         level = sample_level(index)
         if level is None:
             continue
         print(f"[wakeword] input [{index:2d}] level={level:.6f} {device['name']}")
-        if level > 0.0005 and (best is None or level > best[0]):
+        if level > 0.0001 and (best is None or level > best[0]):
             best = (level, index)
     if best is None:
+        print(f"[wakeword] no input device matched '{name_filter or '*'}'", file=sys.stderr)
         return None
     print(f"[wakeword] auto-selected input device [{best[1]}]")
     return best[1], best[0]
@@ -221,6 +237,7 @@ def record_utterance(
     speech_started = False
     quiet = 0.0
     speech_time = 0.0
+    peak = 0.0
     while True:
         block = sd.rec(
             int(chunk * SAMPLE_RATE),
@@ -232,17 +249,23 @@ def record_utterance(
         sd.wait()
         mono = block.flatten()
         level = rms(mono)
+        peak = max(peak, level)
         if not speech_started:
             pre.append(mono)
             if len(pre) > preroll_frames:
                 pre.pop(0)
             if level >= threshold:
                 speech_started = True
+                print(f"[wakeword] speech detected level={level:.5f}")
                 utterance = [*pre, mono]
                 pre.clear()
                 speech_time = chunk
                 quiet = 0.0
             elif time.monotonic() >= deadline:
+                print(
+                    f"[wakeword] no speech (peak={peak:.5f}, "
+                    f"threshold={threshold:.5f})"
+                )
                 return None
             continue
         utterance.append(mono)
@@ -515,6 +538,11 @@ def main() -> int:
         help="audio input device index/name (default: system default)",
     )
     parser.add_argument(
+        "--input-name",
+        default=None,
+        help="only consider input devices containing this name (e.g. G435)",
+    )
+    parser.add_argument(
         "--output-device",
         default=None,
         type=lambda value: int(value) if value.isdigit() else value,
@@ -555,8 +583,8 @@ def main() -> int:
     parser.add_argument(
         "--threshold",
         type=float,
-        default=DEFAULT_THRESHOLD,
-        help="RMS silence threshold",
+        default=None,
+        help="RMS silence threshold (default: measured from the microphone noise floor)",
     )
     parser.add_argument("--once", action="store_true", help="process a single window and exit")
     parser.add_argument(
@@ -598,23 +626,22 @@ def main() -> int:
         return 0
 
     device = args.device
+    if device is None and args.input_name:
+        choice = choose_input_device(args.input_name)
+        if choice is not None:
+            device, _level = choice
+    if args.threshold is None:
+        floor = measure_noise_floor(device)
+        args.threshold = max(0.0013, min(floor * 4.0, 0.01)) if floor else DEFAULT_THRESHOLD
     if args.calibrate:
         level = rms(record_window(3.0, device))
         print(f"[wakeword] microphone RMS over 3 s: {level:.6f}")
-        print(f"[wakeword] suggested threshold: {max(0.002, level * 0.4):.6f}")
+        print(f"[wakeword] suggested threshold: {max(0.0008, level * 0.5):.6f}")
         return 0
     if args.auto_input and device is None:
         choice = choose_input_device()
         if choice is not None:
-            device, ambient = choice
-            # One extra stream open would hang on WDM-KS; reuse the sample that
-            # auto-selection already collected. Cap it so a loud setup moment
-            # cannot make the assistant deaf during normal speech.
-            args.threshold = max(DEFAULT_THRESHOLD, min(ambient * 1.1, 0.009))
-            print(
-                f"[wakeword] ambient={ambient:.6f} "
-                f"threshold={args.threshold:.4f}"
-            )
+            device, _ambient = choice
 
     OUTPUT_DEVICE = (
         args.output_device
@@ -807,6 +834,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
 
 
