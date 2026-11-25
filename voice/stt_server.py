@@ -18,6 +18,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -65,6 +67,16 @@ PIPER_MODEL = Path(
         str(ROOT.parent / ".demo" / "piper" / "es_MX-claude-high.onnx"),
     )
 )
+PIPER_VOICE = None
+PIPER_LOCK = threading.Lock()
+if PIPER_MODEL.is_file():
+    try:
+        from piper import PiperVoice
+
+        PIPER_VOICE = PiperVoice.load(str(PIPER_MODEL))
+        print(f"piper voice loaded from {PIPER_MODEL}")
+    except Exception as error:
+        print(f"piper voice failed to load: {error}", file=sys.stderr)
 
 
 def decode_audio(data: bytes) -> np.ndarray:
@@ -89,6 +101,13 @@ def synthesize(text: str) -> bytes:
         raise RuntimeError(f"piper executable not found: {PIPER_EXE}")
     if not PIPER_MODEL.is_file():
         raise RuntimeError(f"piper model not found: {PIPER_MODEL}")
+    if PIPER_VOICE is not None:
+        buffer = io.BytesIO()
+        with PIPER_LOCK:
+            with wave.open(buffer, "wb") as wav:
+                PIPER_VOICE.synthesize_wav(text, wav)
+        return buffer.getvalue()
+
     with tempfile.TemporaryDirectory(prefix="hs-tts-") as directory:
         output = Path(directory) / "reply.wav"
         result = subprocess.run(
@@ -102,6 +121,20 @@ def synthesize(text: str) -> bytes:
             detail = (result.stderr or result.stdout).strip()[:300]
             raise RuntimeError(f"piper failed: {detail}")
         return output.read_bytes()
+
+
+def transcribe_fast(audio: np.ndarray) -> str:
+    """Transcribe with Vosk's general Spanish model (low latency)."""
+    if VOSK_MODEL is None:
+        raise RuntimeError("vosk model is not available")
+    pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+    recognizer = KaldiRecognizer(VOSK_MODEL, 16_000)
+    parts: list[str] = []
+    for offset in range(0, len(pcm), 32_000):
+        if recognizer.AcceptWaveform(pcm[offset : offset + 32_000]):
+            parts.append(str(json.loads(recognizer.Result()).get("text", "")))
+    parts.append(str(json.loads(recognizer.FinalResult()).get("text", "")))
+    return " ".join(part for part in parts if part).strip()
 
 
 def detect_wake(audio: np.ndarray) -> dict:
@@ -190,6 +223,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(wav)
 
+    def _transcribe_fast(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > 20 * 1024 * 1024:
+            self._json(400, {"error": "invalid audio length"})
+            return
+        data = self.rfile.read(length)
+        try:
+            audio = decode_audio(data)
+            text = transcribe_fast(audio)
+        except Exception as error:
+            self._json(500, {"error": str(error)[:300]})
+            return
+        self._json(200, {"text": text, "duration": round(audio.size / 16_000, 2)})
+
     def _wake(self) -> None:
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0 or length > 8 * 1024 * 1024:
@@ -218,6 +265,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/wake":
             self._wake()
             return
+        if self.path == "/transcribe-fast":
+            self._transcribe_fast()
+            return
         if self.path != "/transcribe":
             self._json(404, {"error": "not found"})
             return
@@ -236,7 +286,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             text = wakeword.transcribe(
-                MODEL, audio, "es", "Hola Aura.", beam_size=3
+                MODEL,
+                audio,
+                "es",
+                None,
+                beam_size=5,
+                vad_filter=False,
+                enhance=False,
             )
         except Exception as error:
             self._json(500, {"error": f"transcription failed: {error}"})
@@ -256,4 +312,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 

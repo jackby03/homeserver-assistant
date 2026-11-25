@@ -134,3 +134,19 @@ export async function synthesizeKioskSpeech(text: string): Promise<Blob> {
   }
   return response.blob();
 }
+
+
+/** Fast command transcription using Vosk's general Spanish model. */
+export async function transcribeKioskAudioFast(blob: Blob): Promise<string> {
+  const response = await fetch(`${STT_BASE_URL}/transcribe-fast`, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+    body: blob,
+  });
+  if (!response.ok) {
+    throw new Error(`local fast STT failed (HTTP ${response.status})`);
+  }
+  const data = (await response.json()) as { text?: string; error?: string };
+  if (data.error) throw new Error(data.error);
+  return (data.text ?? '').trim();
+}

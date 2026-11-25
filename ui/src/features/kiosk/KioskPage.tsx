@@ -22,6 +22,7 @@ import {
   kioskApi,
   synthesizeKioskSpeech,
   transcribeKioskAudio,
+  transcribeKioskAudioFast,
 } from '@/api/kiosk';
 import type { KioskHistoryEntry } from '@/api/kiosk';
 import { profilesApi } from '@/api/profiles';
@@ -610,18 +611,115 @@ export function KioskPage(): React.JSX.Element {
       }, milliseconds);
     });
 
+  const recordUntilSilence = (
+    stream: MediaStream,
+    maxMs = 8_000,
+    silenceMs = 650,
+    threshold = 0.012,
+  ): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const chunks: Blob[] = [];
+      const preferred = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : undefined;
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(
+          stream,
+          preferred === undefined ? undefined : { mimeType: preferred },
+        );
+      } catch (cause) {
+        reject(cause);
+        return;
+      }
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2_048;
+      source.connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      let finished = false;
+      const cleanup = (): void => {
+        try {
+          source.disconnect();
+        } catch {
+          /* already disconnected */
+        }
+        void context.close().catch(() => undefined);
+      };
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+      };
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = finish;
+      recorder.onerror = () => {
+        cleanup();
+        reject(new Error('recording failed'));
+      };
+      recorder.start();
+      void context.resume().catch(() => undefined);
+      const started = performance.now();
+      let lastVoice = started;
+      let heard = false;
+      let maxRms = 0;
+      const tick = (): void => {
+        if (finished) return;
+        analyser.getFloatTimeDomainData(samples);
+        let energy = 0;
+        for (let index = 0; index < samples.length; index += 1) {
+          energy += samples[index] * samples[index];
+        }
+        const rms = Math.sqrt(energy / samples.length);
+        maxRms = Math.max(maxRms, rms);
+        const now = performance.now();
+        if (rms >= threshold) {
+          heard = true;
+          lastVoice = now;
+        }
+        const elapsed = now - started;
+        const shouldStop =
+          (heard && now - lastVoice >= silenceMs) ||
+          elapsed >= maxMs ||
+          (!heard && elapsed >= 4_000);
+        if (shouldStop) {
+          console.debug('[vad] stop', {
+            elapsed: Math.round(elapsed),
+            heard,
+            maxRms: Number(maxRms.toFixed(4)),
+            rms: Number(rms.toFixed(4)),
+          });
+          if (recorder.state === 'inactive') {
+            finish();
+          } else {
+            recorder.stop();
+          }
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
   const continuousLoop = async (stream: MediaStream): Promise<void> => {
     while (continuousRef.current) {
       try {
-        const clip = await recordClip(stream, 2_000);
+        const clip = await recordClip(stream, 1_500);
         if (!continuousRef.current) return;
         if (!(await detectKioskWake(clip))) continue;
         const outcome = await kioskApi.wake('hola aura');
         if (!outcome.activated) continue;
         setAssistantName(outcome.assistant_name);
         setAvatarState('listening');
-        const requestClip = await recordClip(stream, 6_000);
-        const query = (await transcribeKioskAudio(requestClip)).trim();
+        const requestClip = await recordUntilSilence(stream);
+        let query = (await transcribeKioskAudioFast(requestClip)).trim();
+        if (query === '') {
+          query = (await transcribeKioskAudio(requestClip)).trim();
+        }
         if (query !== '') await sendQuery(query);
       } catch {
         await new Promise((resolve) => window.setTimeout(resolve, 1_000));
@@ -709,7 +807,8 @@ export function KioskPage(): React.JSX.Element {
         });
         if (blob.size === 0) return;
         setTranscribing(true);
-        void transcribeKioskAudio(blob)
+        void transcribeKioskAudioFast(blob)
+          .then((fast) => (fast === '' ? transcribeKioskAudio(blob) : fast))
           .then((transcript) => {
             if (transcript.trim() === '') {
               pushChat('assistant', t('kiosk.recordEmpty'));
@@ -1396,6 +1495,8 @@ function activityToAvatar(activity: AgentActivity): AvatarState {
       return 'idle';
   }
 }
+
+
 
 
 

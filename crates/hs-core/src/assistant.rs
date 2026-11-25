@@ -267,7 +267,16 @@ pub fn parse_local_intent(text: &str) -> Option<LocalIntent> {
         }
     }
 
-    if contains(&text, "que hora") || contains(&text, "dime la hora") || text == "hora" {
+    if contains(&text, "que hora")
+        || contains(&text, "que horas")
+        || contains(&text, "horas son")
+        || contains(&text, "dime la hora")
+        || starts_with_any(&text, &["que hora", "que horas"])
+        || words(&text)
+            .iter()
+            .any(|word| *word == "hora" || *word == "horas")
+        || text == "hora"
+    {
         return Some(LocalIntent::Time);
     }
     if contains(&text, "que dia es hoy")
@@ -511,6 +520,11 @@ mod tests {
     fn basic_control_intents_are_recognized() {
         assert_eq!(parse_local_intent("Hola Aura"), Some(LocalIntent::Greeting));
         assert_eq!(parse_local_intent("¿Qué hora es?"), Some(LocalIntent::Time));
+        assert_eq!(parse_local_intent("¡Qué horas!"), Some(LocalIntent::Time));
+        assert_eq!(
+            parse_local_intent("¿Qué horas son?"),
+            Some(LocalIntent::Time)
+        );
         assert_eq!(
             parse_local_intent("¿Qué día es hoy?"),
             Some(LocalIntent::Date)

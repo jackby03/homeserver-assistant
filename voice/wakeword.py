@@ -549,10 +549,12 @@ def transcribe(
     initial_prompt: str | None = None,
     beam_size: int = 3,
     vad_filter: bool = True,
+    enhance: bool = True,
 ) -> str:
     """Transcribe a window locally; model/driver failures must not kill the loop."""
     try:
-        audio = enhance_audio(audio)
+        if enhance:
+            audio = enhance_audio(audio)
         segments, _info = model.transcribe(
             audio,
             language=language if language in {"es", "en"} else None,
@@ -1088,6 +1090,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 
