@@ -1,6 +1,8 @@
 {
   "name": "homeserver-assistant-ui",
   "private": true,
+  "license": "GPL-3.0-only",
+  "author": "HomeServer Assistant Contributors",
   "version": "0.1.0",
   "type": "module",
   "description": "Unified web UI for HomeServer Assistant OS: admin portal, wall kiosk and first-boot wizard.",

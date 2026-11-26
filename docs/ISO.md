@@ -77,6 +77,10 @@ verifying them out-of-band.
 ## 3. Build commands
 
 ```bash
+# The console password is mandatory and never committed.
+# Generate a hash once: openssl passwd -6 'a strong unique password'
+export HS_CONSOLE_PASSWORD_HASH='$6$...'
+
 # Full build with daemon binaries and UI embedded (recommended).
 cargo build --release -p hs-daemon -p hs-vision
 (cd ui && pnpm install --frozen-lockfile && pnpm build)
@@ -109,7 +113,8 @@ patch failure, xorriso failure, failed `--test`). No step is skipped silently.
 2. **Extract** with `xorriso -indev BASE -osirrox on -extract / iso-root`;
    `chmod -R u+w` because extracted files are read-only.
 3. **Inject**:
-   - `iso/autoinstall/user-data` + `meta-data` → `/nocloud/`;
+   - `iso/autoinstall/user-data` (with `__CONSOLE_PASSWORD_HASH__` replaced from
+    `HS_CONSOLE_PASSWORD_HASH`) + `meta-data` → `/nocloud/`;
    - `infra/`, `scripts/`, `docs/`, `iso/autoinstall`, `iso/rootfs-overlay` →
      `/hs/repo/`;
    - `--binaries` → `/hs/bin/` (mode 0755);

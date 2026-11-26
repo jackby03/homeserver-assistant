@@ -60,6 +60,19 @@ iso/output/
 
 # Python
 __pycache__/
+# Python virtualenvs and tool caches
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local secrets / state from development
+ui/.env.local
+*.sqlite
+*.sqlite3
+
 *.pyc
 
 # Piper temporary audio

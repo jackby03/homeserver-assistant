@@ -4,6 +4,26 @@ All notable changes to HomeServer Assistant OS are documented here. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Project relicensed from MIT to **GPL-3.0-only**. Added `NOTICE`, third-party
+  notices, code of conduct, security policy, support, roadmap, issue/PR
+  templates and Dependabot.
+- Agent personality is now maintained in `SOUL.md` and loaded from
+  `data/SOUL.md`.
+- Added persistent per-profile memory, absolute/relative reminders, RSS news,
+  and opt-in Composio calendar/email capabilities with risk-aware confirmation.
+
+### Security
+
+- Tool calls carry an explicit `ToolRisk`; writes require an explicit user
+  confirmation.
+- Composio uses one encrypted project API key, per-toolkit auth configs and
+  connected accounts; OAuth tokens never enter the appliance.
+- External action endpoints are allow-listed and config-validated.
+
 ## [0.1.0] - 2026-01-15
 
 First end-to-end appliance baseline: Rust backend, React UI, local vision,
@@ -71,8 +91,6 @@ infrastructure and ISO pipeline.
   development machine only exercises renderers and fakes.
 - No OTA update channel yet; updates are applied through the package manager and
   documented backups.
-
-[0.1.0]: https://example.invalid/homeserver-assistant/releases/tag/v0.1.0
 
 
 

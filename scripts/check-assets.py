@@ -227,8 +227,8 @@ def check_autoinstall(parsed: object) -> None:
     identity = auto.get("identity") or {}
     password = str(identity.get("password", ""))
     check(
-        "autoinstall: password is a SHA-512 crypt hash (change before shipping)",
-        password.startswith("$6$"),
+        "autoinstall: password is a SHA-512 crypt hash or the build placeholder",
+        password.startswith("$6$") or password == "__CONSOLE_PASSWORD_HASH__",
         "generate with: openssl passwd -6",
     )
     ssh = auto.get("ssh") or {}

@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use HomeServer Assistant OS in research or a project, please cite it."
+title: "HomeServer Assistant OS"
+abstract: "A local-first home server appliance with a Rust backend, admin console, Incus runtime, encrypted DNS/firewall, Home Assistant, local vision and an agentic voice assistant."
+version: "0.1.0"
+date-released: "2026-11-25"
+license: "GPL-3.0-only"
+authors:
+  - name: "HomeServer Assistant Contributors"
+keywords:
+  - home-server
+  - self-hosted
+  - local-first
+  - rust
+  - home-assistant
+  - voice-assistant

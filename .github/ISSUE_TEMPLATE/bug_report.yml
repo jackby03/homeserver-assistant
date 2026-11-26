@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible problem in the appliance, agent or UI.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do **not** include secrets, API keys,
+        `master.key`, `state.redb`, `.env` files or personal family data.
+        Security vulnerabilities belong in a private advisory, not here.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the daemon with ...
+        2. Open ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: Redact secrets and personal data.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "0.1.0 or git commit hash"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Development mode (mock runtime)
+        - Real appliance / Linux
+        - ISO / QEMU
+        - UI only
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I have searched existing issues.
+          required: true
+        - label: I have removed passwords, tokens and personal data from this report.
+          required: true
