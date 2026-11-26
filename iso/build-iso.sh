@@ -237,7 +237,9 @@ inject_content() {
     mkdir -p "$ISO_ROOT/hs/repo/iso"
     cp -a "$SCRIPT_DIR/autoinstall" "$ISO_ROOT/hs/repo/iso/"
     cp -a "$SCRIPT_DIR/rootfs-overlay" "$ISO_ROOT/hs/repo/iso/"
-    [[ -f "$REPO_ROOT/LICENSE" ]] && install -m 0644 "$REPO_ROOT/LICENSE" "$ISO_ROOT/hs/repo/LICENSE"
+    for notice in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
+        [[ -f "$REPO_ROOT/$notice" ]] && install -m 0644 "$REPO_ROOT/$notice" "$ISO_ROOT/hs/repo/$notice"
+    done
 
     # Windows checkouts / archives lose the execute bit: restore it before the
     # late-commands run install.sh from the mounted ISO.
