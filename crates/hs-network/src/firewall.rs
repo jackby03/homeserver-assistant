@@ -819,9 +819,7 @@ fn forward_interface_mentions(rules: &[&str], interface: &str) -> usize {
 mod tests {
     use ipnet::Ipv4Net;
 
-    use super::{
-        render_nftables, validate_isolation, validate_plan, write_ruleset, FirewallPlan,
-    };
+    use super::{render_nftables, validate_isolation, validate_plan, write_ruleset, FirewallPlan};
     use crate::error::NetworkError;
 
     fn plan() -> FirewallPlan {
