@@ -122,7 +122,7 @@ Do not upload an ISO until all of these are true:
 - GitHub releases that silently include binary artefacts; keep them source-only
   unless the same source and notices are published.
 
-## 6. After launch
+## 7. After launch
 
 - Triage issues against `ROADMAP.md`.
 - Label `good first issue` and `area/*` issues.
