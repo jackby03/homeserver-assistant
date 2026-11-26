@@ -180,6 +180,7 @@ pub fn build_ports(
     ha: Arc<HaService>,
     data_dir: &std::path::Path,
     timers: Arc<crate::timers::TimerService>,
+    external: Arc<dyn hs_tools::ExternalActions>,
 ) -> ToolPorts {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -198,5 +199,6 @@ pub fn build_ports(
         memory: Arc::new(crate::memory::FileMemoryStore::new(data_dir.join("memory"))),
         timers,
         news: Arc::new(crate::news::NewsAdapter::new()),
+        external,
     }
 }

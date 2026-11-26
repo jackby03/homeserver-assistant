@@ -30,9 +30,9 @@ pub mod workflow;
 pub use error::{ToolError, ToolResult};
 pub use hs_core::models::InstanceSummary;
 pub use ports::{
-    AudioControl, DomoticsControl, EntityLite, EphemeralMemoryStore, EphemeralNews,
-    EphemeralTimerStore, MemoryEntry, MemoryStore, NewsItem, NewsSearch, RuntimeControl,
-    SystemControl, TimerControl, TimerEntry, ToolPorts, WebhookClient,
+    AudioControl, DomoticsControl, EntityLite, EphemeralExternal, EphemeralMemoryStore,
+    EphemeralNews, EphemeralTimerStore, ExternalActions, MemoryEntry, MemoryStore, NewsItem,
+    NewsSearch, RuntimeControl, SystemControl, TimerControl, TimerEntry, ToolPorts, WebhookClient,
 };
-pub use registry::{Tool, ToolDescriptor, ToolOutcome, ToolRegistry};
+pub use registry::{Tool, ToolDescriptor, ToolOutcome, ToolRegistry, ToolRisk};
 pub use workflow::{WorkflowEngine, WorkflowRun, WorkflowStep};

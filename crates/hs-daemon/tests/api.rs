@@ -1040,7 +1040,7 @@ async fn agent_endpoints_expose_tools_and_provider_validation() {
         .await;
     assert_eq!(tools.status, StatusCode::OK, "{}", tools.text);
     let tools = tools.body.as_array().expect("tools");
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 20);
     assert!(tools.iter().any(|tool| tool["name"] == "music.play"));
 
     let invalid = app

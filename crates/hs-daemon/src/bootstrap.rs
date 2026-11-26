@@ -113,12 +113,17 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
     let timers = crate::timers::TimerService::new(&daemon.data_dir, events.clone());
     timers.start();
 
+    let external = Arc::new(crate::integrations::ComposioAdapter::new(
+        Arc::clone(&config_manager),
+        Arc::clone(&secrets),
+    ));
     let ports = adapters::build_ports(
         Arc::clone(&runtime),
         Arc::clone(&system),
         Arc::clone(&ha),
         &daemon.data_dir,
         timers,
+        external,
     );
     let tools = ToolRegistry::builtin(ports);
     let soul = match hs_agent::soul::load_or_seed(&daemon.data_dir) {

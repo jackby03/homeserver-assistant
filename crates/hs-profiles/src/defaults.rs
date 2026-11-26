@@ -26,6 +26,9 @@ const OWNER_TOOLS: &[&str] = &[
     "timer.list",
     "timer.cancel",
     "news.latest",
+    "calendar.list_events",
+    "calendar.create_event",
+    "email.send",
 ];
 
 /// Adults may do everything except stop running workloads.

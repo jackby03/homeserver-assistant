@@ -53,6 +53,8 @@ pub struct SystemConfig {
     pub kiosk: KioskConfig,
     /// Optional homeserver services.
     pub services: ServicesConfig,
+    /// Explicitly opted-in outbound integrations.
+    pub integrations: IntegrationsConfig,
 }
 
 impl Default for SystemConfig {
@@ -68,6 +70,7 @@ impl Default for SystemConfig {
             voice: VoiceConfig::default(),
             kiosk: KioskConfig::generate(),
             services: ServicesConfig::default(),
+            integrations: IntegrationsConfig::default(),
         }
     }
 }
@@ -101,6 +104,7 @@ impl SystemConfig {
         self.voice.validate()?;
         self.kiosk.validate()?;
         self.services.validate()?;
+        self.integrations.validate()?;
         Ok(())
     }
 
@@ -586,6 +590,129 @@ impl LlmProviderKind {
     }
 }
 
+/// Explicitly opted-in outbound integrations.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IntegrationsConfig {
+    /// Composio action gateway.
+    pub composio: ComposioConfig,
+}
+
+impl IntegrationsConfig {
+    /// Validate integration settings.
+    ///
+    /// # Errors
+    /// Returns [`CoreError::Validation`] when an enabled integration is not
+    /// safely configured.
+    pub fn validate(&self) -> CoreResult<()> {
+        self.composio.validate()
+    }
+}
+
+/// Composio action gateway configuration.
+///
+/// The API key is never stored here: it lives under [`Self::api_key_secret`]
+/// in the encrypted secret store. Only named, allow-listed actions are exposed
+/// to the agent; the model cannot choose arbitrary Composio slugs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ComposioConfig {
+    /// Master switch. Composio is opt-in and off by default.
+    pub enabled: bool,
+    /// Composio API base URL. Production must use HTTPS; loopback HTTP is
+    /// allowed only for the local POC/mock.
+    pub base_url: String,
+    /// Stable Composio user id for this household.
+    pub user_id: String,
+    /// Connected account used for the action allow-list.
+    pub connected_account_id: Option<String>,
+    /// Secret-store key holding the Composio API key.
+    pub api_key_secret: String,
+    /// Read-only calendar action slug.
+    pub calendar_list_action: String,
+    /// Calendar creation action slug.
+    pub calendar_create_action: String,
+    /// Email send action slug.
+    pub email_send_action: String,
+}
+
+impl Default for ComposioConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            base_url: "https://backend.composio.dev".to_owned(),
+            user_id: "homeserver".to_owned(),
+            connected_account_id: None,
+            api_key_secret: "integrations.composio.api_key".to_owned(),
+            calendar_list_action: "GOOGLECALENDAR_LIST_EVENTS".to_owned(),
+            calendar_create_action: "GOOGLECALENDAR_CREATE_EVENT".to_owned(),
+            email_send_action: "GMAIL_SEND_EMAIL".to_owned(),
+        }
+    }
+}
+
+impl ComposioConfig {
+    /// Validate Composio settings.
+    ///
+    /// # Errors
+    /// Returns [`CoreError::Validation`] for unsafe URLs, empty identities or
+    /// malformed action slugs.
+    pub fn validate(&self) -> CoreResult<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        validation::http_url(&self.base_url)?;
+        let allowed_host = self.base_url.starts_with("https://backend.composio.dev")
+            || is_loopback_http(&self.base_url);
+        if !allowed_host {
+            return Err(CoreError::validation(
+                "integrations.composio.base_url",
+                "must target https://backend.composio.dev or loopback for local POC",
+            ));
+        }
+        if !self.base_url.starts_with("https://") && !is_loopback_http(&self.base_url) {
+            return Err(CoreError::validation(
+                "integrations.composio.base_url",
+                "must use HTTPS (loopback HTTP is only allowed for local POC testing)",
+            ));
+        }
+        if self.user_id.trim().is_empty() {
+            return Err(CoreError::validation(
+                "integrations.composio.user_id",
+                "is required when Composio is enabled",
+            ));
+        }
+        if self.api_key_secret.trim().is_empty() {
+            return Err(CoreError::validation(
+                "integrations.composio.api_key_secret",
+                "is required",
+            ));
+        }
+        for (field, slug) in [
+            ("calendar_list_action", &self.calendar_list_action),
+            ("calendar_create_action", &self.calendar_create_action),
+            ("email_send_action", &self.email_send_action),
+        ] {
+            let valid = !slug.is_empty()
+                && slug.len() <= 96
+                && slug
+                    .chars()
+                    .all(|character| character.is_ascii_uppercase() || character == '_');
+            if !valid {
+                return Err(CoreError::validation(
+                    field,
+                    "must be an uppercase Composio action slug",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn is_loopback_http(url: &str) -> bool {
+    url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost")
+}
+
 /// Default assistant provider configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -924,6 +1051,18 @@ mod tests {
         assert!(config.validate().is_err());
         config.network.dns.custom_upstream = Some("https://dns.example.com/dns-query".to_owned());
         config.validate().expect("custom dns should be valid");
+    }
+
+    #[test]
+    fn composio_requires_https_or_loopback() {
+        let mut config = valid_config();
+        config.integrations.composio.enabled = true;
+        config.integrations.composio.base_url = "http://192.168.1.10:9900".to_owned();
+        assert!(config.validate().is_err());
+        config.integrations.composio.base_url = "http://127.0.0.1:9900".to_owned();
+        config.validate().expect("loopback POC URL is allowed");
+        config.integrations.composio.base_url = "https://backend.composio.dev".to_owned();
+        config.validate().expect("Composio HTTPS is allowed");
     }
 
     #[test]

@@ -73,7 +73,7 @@ Rules:
   except along the arrows above.
 - **Ports and adapters.** `hs-tools` defines small port traits
   (`RuntimeControl`, `DomoticsControl`, `AudioControl`, `SystemControl`,
-  `WebhookClient`, `MemoryStore`, `TimerControl`, `NewsSearch`); `hs-daemon` implements them with real adapters. That keeps
+  `WebhookClient`, `MemoryStore`, `TimerControl`, `NewsSearch`, `ExternalActions`); `hs-daemon` implements them with real adapters. That keeps
   the security-critical permission check independent from infrastructure.
 - **Composition root.** Only `hs-daemon` knows concrete adapters and their
   configuration. Domain crates accept injected trait objects.
