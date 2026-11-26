@@ -1054,7 +1054,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "hyperlocal",
- "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -1086,8 +1085,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "hs-core",
- "hs-profiles",
- "regex",
  "serde",
  "serde_json",
  "tempfile",
@@ -1903,18 +1900,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags 2.13.2",
-]
-
-[[package]]
-name = "regex"
-version = "1.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9807af0e638c12e753aa1b4e601791bf2a8f71274023c8bbeec12fc149950857"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
 ]
 
 [[package]]

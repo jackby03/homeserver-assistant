@@ -317,7 +317,7 @@ async fn firewall_history(
             ));
         }
     }
-    backups.sort_by(|left, right| right.0.cmp(&left.0));
+    backups.sort_by_key(|left| std::cmp::Reverse(left.0));
     backups.truncate(30);
     Ok(Json(
         backups.into_iter().map(|(_, backup)| backup).collect(),
