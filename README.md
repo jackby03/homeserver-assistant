@@ -1,5 +1,10 @@
 # HomeServer Assistant OS
 
+[![CI](https://github.com/jackby03/homeserver-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/jackby03/homeserver-assistant/actions/workflows/ci.yml)
+[![License: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+
+**Repositorio:** https://github.com/jackby03/homeserver-assistant
+
 **Un home server de código abierto, local-first, instalable desde una ISO y
 pensado para vivir montado en la pared.** Combina un panel web de administración,
 virtualización con Incus (contenedores LXC, contenedores OCI y VMs), DNS cifrado
