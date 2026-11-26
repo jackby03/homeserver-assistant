@@ -352,6 +352,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — hardware, instalación, TLS, backups.
 - [`docs/ISO.md`](docs/ISO.md) — construcción y prueba de la ISO.
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — entorno de desarrollo y tests.
+- [`docs/PUBLISHING.md`](docs/PUBLISHING.md) — publicación, releases y checklist GPLv3.
 - [`voice/README.md`](voice/README.md) — wake word local y STT sin nube.
 - [`docs/adr/`](docs/adr/) — decisiones de arquitectura.
 - [`AGENTS.md`](AGENTS.md) — reglas de ingeniería para humanos y agentes de IA.
