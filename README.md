@@ -55,8 +55,9 @@ Más capturas y notas en [`docs/screenshots/`](docs/screenshots/).
 12. [Configuración y datos](#configuración-y-datos)
 13. [Estado del proyecto](#estado-del-proyecto)
 14. [Documentación](#documentación)
-15. [Contribuir y soporte](#contribuir-y-soporte)
-16. [Licencia](#licencia)
+15. [Distribución](#distribución)
+16. [Contribuir y soporte](#contribuir-y-soporte)
+17. [Licencia](#licencia)
 
 ---
 
@@ -278,6 +279,12 @@ cifrada, degradación de servicios y los flujos HTTP completos del daemon.
 
 ## Primer arranque
 
+> La ISO todavía **no se distribuye**. Se publicará en SourceForge cuando exista
+> una versión estable funcional y verificada en hardware real; el código fuente y
+> las instrucciones de compilación están disponibles aquí desde ya. La ISO de
+> desarrollo se construye con `iso/build-iso.sh` y **no se adjunta a los releases
+> de GitHub**.
+
 1. Arranca la ISO en el portátil/pantalla de pared. El sistema instala,
    provisiona Incus y arranca `hs-daemon`, `hs-vision` y el kiosko.
 2. Abre `https://<ip-del-servidor>:8443` desde el móvil o el PC y acepta la CA
@@ -359,7 +366,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | Agente IA, herramientas, workflows, perfiles | ✅ 20 herramientas, SOUL.md editable, memoria, timers, noticias RSS, calendario/correo opt-in y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
 | UI (admin, kiosko, wizard) | ✅ Type-check, 20 tests y build de producción |
-| Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; build/prueba real en host Linux |
+| Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; la ISO estable se publicará en SourceForge cuando se valide en hardware real |
 | TLS nativo en el daemon | ❌ Decisión de diseño: lo termina Caddy (ver ADR 0003) |
 | Terminal PTY interactiva en Incus | 🟡 Ejecución de comandos uno-a-uno por WebSocket; PTY pendiente |
 | Actualizaciones OTA firmadas | 🟡 Documentado como mantenimiento manual; canal OTA pendiente |
@@ -385,6 +392,23 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 - [`ROADMAP.md`](ROADMAP.md) — próximos hitos del proyecto.
 
 ---
+
+## Distribución
+
+| Canal | Contenido | Estado |
+|---|---|---|
+| **GitHub** | Código fuente, issues, discussions, tags y releases de fuente | Activo |
+| **SourceForge** | ISO estable, sumas SHA256, manifiesto y firmas | Pendiente de la primera versión estable |
+
+La ISO no se publica como *nightly* ni se adjunta a releases de GitHub. Se
+distribuirá en SourceForge únicamente cuando se cumplan los criterios de
+estabilidad documentados en [`docs/PUBLISHING.md`](docs/PUBLISHING.md): hardware
+real, Incus/DNS/firewall/backup verificados, pruebas de actualización y una
+versión congelada con commit reproducible.
+
+Mientras tanto, cualquiera puede construirla desde fuente siguiendo
+[`docs/ISO.md`](docs/ISO.md). El build exige `HS_CONSOLE_PASSWORD_HASH` y no
+incluye contraseñas por defecto.
 
 ## Contribuir y soporte
 

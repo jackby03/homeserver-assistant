@@ -83,6 +83,45 @@ do not zip the working tree.
 6. Announce the security model and the local-first scope; ask users to report
    vulnerabilities privately, not in public issues.
 
+## 6. ISO distribution (SourceForge)
+
+GitHub hosts the source and source releases. **SourceForge is the only channel
+for published ISO images**, and only for a stable, functional release.
+
+### 6.1 Stability gate
+
+Do not upload an ISO until all of these are true:
+
+- [ ] The source tag is frozen and reproducible (same commit + toolchain).
+- [ ] Clean install from the ISO on at least one real x86-64 machine.
+- [ ] First boot, setup wizard, admin login and kiosk verified.
+- [ ] Real Incus LXC/OCI/VM lifecycle and snapshots verified.
+- [ ] DNS filtering, nftables, DMZ isolation and admin-only exposure verified.
+- [ ] Backup/restore and upgrade path verified on a second machine or VM.
+- [ ] Home Assistant, profiles, local vision, wake word and agent tools verified
+      without cloud credentials.
+- [ ] No P0/P1 security or data-loss issues open.
+- [ ] A soak period (at least 7 days on a household-like workload) completed.
+- [ ] ISO checksum, manifest and signature generated and independently verified.
+- [ ] `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.md` are inside the image.
+
+### 6.2 SourceForge upload
+
+1. Create the SourceForge project and release folder when the gate passes.
+2. Upload the ISO, `.manifest.json`, `SHA256SUMS`, signature and release notes.
+3. Publish the corresponding source tag on GitHub and link both directions.
+4. Never replace an existing ISO in place; publish a new versioned folder.
+5. Keep at least the previous stable ISO available for rollback.
+6. Announce the exact source commit and known hardware matrix.
+
+### 6.3 What not to publish
+
+- Development/nightly ISOs.
+- Images built from uncommitted changes or without `HS_CONSOLE_PASSWORD_HASH`.
+- ISOs without checksums/signatures or with missing third-party notices.
+- GitHub releases that silently include binary artefacts; keep them source-only
+  unless the same source and notices are published.
+
 ## 6. After launch
 
 - Triage issues against `ROADMAP.md`.

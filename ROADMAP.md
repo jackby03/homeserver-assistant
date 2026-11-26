@@ -56,6 +56,14 @@ owner/implementation path. See `README.md` for the current status table.
 - More tests for prompt injection, tool abuse and external integration failure
   modes.
 
+## Stable release and ISO gate
+
+The first stable ISO is not a date-driven milestone. It ships when the
+appliance has been validated end to end on real hardware and the SourceForge
+gate in `docs/PUBLISHING.md` is met: reproducible source tag, real Incus,
+DNS/firewall/DMZ, backup/restore/upgrade, kiosk, voice and a soak period. Until
+then GitHub publishes source only and SourceForge receives no ISO.
+
 ## How to help
 
 - Pick an issue labelled `good first issue` or `area/*`.

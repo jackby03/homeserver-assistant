@@ -5,6 +5,11 @@ Assistant OS installation ISO (Ubuntu 24.04 LTS server, amd64). The quick
 operator flow lives in [`iso/README.md`](../iso/README.md); this document is the
 canonical detail for maintainers and CI.
 
+> **Distribution status:** the ISO is **not published yet**. Builds are for
+> development and hardware validation. Stable ISOs will be published on
+> SourceForge with SHA256, manifest and signatures once the stability gate in
+> [`PUBLISHING.md`](PUBLISHING.md) is met. GitHub releases remain source-only.
+
 ---
 
 ## 1. Artefacts
