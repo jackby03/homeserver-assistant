@@ -3,8 +3,10 @@
 //! The API never returns the API key. The key is written to the encrypted
 //! secret store and the non-secret configuration is persisted separately.
 
-use axum::extract::State;
-use axum::routing::get;
+use std::collections::BTreeMap;
+
+use axum::extract::{Query, State};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use hs_auth::Permission;
 use hs_core::models::AuditOutcome;
@@ -16,10 +18,13 @@ use crate::state::SharedState;
 
 /// Integration routes.
 pub fn router() -> Router<SharedState> {
-    Router::new().route(
-        "/integrations/composio",
-        get(get_composio).put(update_composio),
-    )
+    Router::new()
+        .route(
+            "/integrations/composio",
+            get(get_composio).put(update_composio),
+        )
+        .route("/integrations/composio/connect", post(connect_composio))
+        .route("/integrations/composio/tools", get(discover_composio_tools))
 }
 
 /// Public Composio status. The API key is represented only by `has_api_key`.
@@ -31,8 +36,12 @@ pub struct ComposioStatus {
     pub base_url: String,
     /// Household user id sent to Composio.
     pub user_id: String,
-    /// Connected account used for the allow-list.
+    /// Legacy fallback connected account.
     pub connected_account_id: Option<String>,
+    /// Auth config id per toolkit.
+    pub auth_configs: BTreeMap<String, String>,
+    /// Connected account id per toolkit.
+    pub connected_accounts: BTreeMap<String, String>,
     /// Whether an API key is stored.
     pub has_api_key: bool,
     /// Read-only calendar action slug.
@@ -52,9 +61,15 @@ pub struct UpdateComposioRequest {
     pub base_url: String,
     /// Household user id.
     pub user_id: String,
-    /// Connected account id, if any.
+    /// Legacy fallback connected account id, if any.
     #[serde(default)]
     pub connected_account_id: Option<String>,
+    /// Auth config id per toolkit.
+    #[serde(default)]
+    pub auth_configs: BTreeMap<String, String>,
+    /// Connected account id per toolkit.
+    #[serde(default)]
+    pub connected_accounts: BTreeMap<String, String>,
     /// Optional new API key. Never echoed back.
     #[serde(default)]
     pub api_key: Option<String>,
@@ -64,6 +79,68 @@ pub struct UpdateComposioRequest {
     pub calendar_create_action: String,
     /// Email send action slug.
     pub email_send_action: String,
+}
+
+/// Request to start an OAuth connection for one toolkit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectComposioRequest {
+    /// Composio toolkit slug, for example `gmail` or `googlecalendar`.
+    pub toolkit: String,
+}
+
+/// Query for discovering Composio tool schemas.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiscoverComposioQuery {
+    /// Toolkit slug.
+    pub toolkit: String,
+}
+
+async fn connect_composio(
+    State(state): State<SharedState>,
+    auth: AdminAuth,
+    Json(request): Json<ConnectComposioRequest>,
+) -> HttpResult<Json<serde_json::Value>> {
+    auth.require(Permission::AgentManage)?;
+    let toolkit = request.toolkit.trim();
+    if toolkit.is_empty()
+        || !toolkit
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character == '_')
+    {
+        return Err(HttpError::bad_request("invalid Composio toolkit slug"));
+    }
+    let result = state
+        .composio
+        .create_connection(toolkit)
+        .await
+        .map_err(HttpError::bad_request)?;
+    state.audit(
+        &auth.user().username,
+        "integrations.composio_connect",
+        Some(toolkit),
+        AuditOutcome::Success,
+        None,
+        Some(serde_json::json!({"connected_account_id": result.get("connected_account_id")})),
+    );
+    Ok(Json(result))
+}
+
+async fn discover_composio_tools(
+    State(state): State<SharedState>,
+    auth: AdminAuth,
+    Query(query): Query<DiscoverComposioQuery>,
+) -> HttpResult<Json<serde_json::Value>> {
+    auth.require(Permission::AgentRead)?;
+    let toolkit = query.toolkit.trim();
+    if toolkit.is_empty() {
+        return Err(HttpError::bad_request("missing Composio toolkit"));
+    }
+    let tools = state
+        .composio
+        .discover_tools(toolkit)
+        .await
+        .map_err(HttpError::bad_request)?;
+    Ok(Json(tools))
 }
 
 async fn get_composio(
@@ -81,6 +158,8 @@ async fn get_composio(
         base_url: config.base_url,
         user_id: config.user_id,
         connected_account_id: config.connected_account_id,
+        auth_configs: config.auth_configs,
+        connected_accounts: config.connected_accounts,
         has_api_key,
         calendar_list_action: config.calendar_list_action,
         calendar_create_action: config.calendar_create_action,
@@ -114,6 +193,8 @@ async fn update_composio(
             config.integrations.composio.base_url = request.base_url.clone();
             config.integrations.composio.user_id = request.user_id.clone();
             config.integrations.composio.connected_account_id = connected_account_id.clone();
+            config.integrations.composio.auth_configs = request.auth_configs.clone();
+            config.integrations.composio.connected_accounts = request.connected_accounts.clone();
             config.integrations.composio.calendar_list_action =
                 request.calendar_list_action.clone();
             config.integrations.composio.calendar_create_action =
@@ -148,6 +229,8 @@ async fn update_composio(
         base_url: composio.base_url,
         user_id: composio.user_id,
         connected_account_id: composio.connected_account_id,
+        auth_configs: composio.auth_configs,
+        connected_accounts: composio.connected_accounts,
         has_api_key: state
             .secrets
             .contains(&composio.api_key_secret)

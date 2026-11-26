@@ -356,6 +356,8 @@ A scan may take a few seconds (mDNS/SSDP timeouts) and returns the merged list.
 | POST | `/agent/workflows/{id}/run` | agent.manage |
 | GET | `/integrations/composio` | agent.read |
 | PUT | `/integrations/composio` | agent.manage |
+| POST | `/integrations/composio/connect` | agent.manage |
+| GET | `/integrations/composio/tools?toolkit=…` | agent.read |
 
 Provider upsert:
 ```json
