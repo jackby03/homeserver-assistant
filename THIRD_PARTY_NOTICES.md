@@ -31,9 +31,10 @@ are included in the npm packages.
 
 The Rust workspace uses crates from crates.io, predominantly dual-licensed
 MIT OR Apache-2.0. Their exact versions and source repositories are recorded in
-`Cargo.lock`; each crate ships its license in the Cargo registry. All direct and
-transitive dependencies used by this project are compatible with GPLv3. If you
-redistribute a binary, keep the license texts required by those crates.
+`Cargo.lock`; each crate ships its license in the Cargo registry. Before
+publishing binaries, run a license audit (for example `cargo about` or
+`cargo deny`) over the lockfile and keep the license texts required by those
+crates. Report any incompatible dependency so it can be replaced.
 
 ## Local voice and vision components
 
