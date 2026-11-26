@@ -977,7 +977,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
- "get_if_addrs",
  "hs-core",
  "mdns-sd",
  "serde",
@@ -1016,7 +1015,6 @@ dependencies = [
  "get_if_addrs",
  "hs-core",
  "ipnet",
- "regex",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1072,7 +1070,6 @@ name = "hs-system"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "get_if_addrs",
  "hs-core",
  "serde",
  "sysinfo",

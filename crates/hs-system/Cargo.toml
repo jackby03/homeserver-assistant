@@ -13,7 +13,6 @@ thiserror.workspace = true
 tracing.workspace = true
 sysinfo.workspace = true
 chrono.workspace = true
-get_if_addrs.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

@@ -17,7 +17,6 @@ tokio.workspace = true
 mdns-sd.workspace = true
 uuid.workspace = true
 chrono.workspace = true
-get_if_addrs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
