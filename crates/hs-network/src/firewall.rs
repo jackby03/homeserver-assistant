@@ -820,7 +820,7 @@ mod tests {
     use ipnet::Ipv4Net;
 
     use super::{
-        apply, render_nftables, validate_isolation, validate_plan, write_ruleset, FirewallPlan,
+        render_nftables, validate_isolation, validate_plan, write_ruleset, FirewallPlan,
     };
     use crate::error::NetworkError;
 
@@ -1247,7 +1247,7 @@ mod tests {
     async fn apply_is_unsupported_outside_linux() {
         let dir = tempfile::tempdir().expect("tempdir");
         let target = dir.path().join("homeserver.nft");
-        let error = apply(&plan(), &target)
+        let error = super::apply(&plan(), &target)
             .await
             .expect_err("apply must be unsupported on this platform");
         assert!(matches!(error, NetworkError::Unsupported(_)));
@@ -1260,7 +1260,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut invalid = plan();
         invalid.admin_port = 0;
-        let error = apply(&invalid, &dir.path().join("rules.nft"))
+        let error = super::apply(&invalid, &dir.path().join("rules.nft"))
             .await
             .expect_err("invalid plan must be rejected");
         assert!(matches!(error, NetworkError::Invalid(_)));

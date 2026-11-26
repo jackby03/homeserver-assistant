@@ -15,7 +15,6 @@ thiserror.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 ipnet.workspace = true
-regex.workspace = true
 get_if_addrs.workspace = true
 uuid.workspace = true
 chrono.workspace = true

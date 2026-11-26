@@ -318,8 +318,8 @@ mod tests {
     use serde_yaml::Value;
 
     use super::{
-        apply_netplan, render_netplan, render_netplan_with_options,
-        render_netplan_with_search_domain, NETPLAN_SEARCH_DOMAIN,
+        render_netplan, render_netplan_with_options, render_netplan_with_search_domain,
+        NETPLAN_SEARCH_DOMAIN,
     };
     use crate::error::NetworkError;
 
@@ -551,7 +551,7 @@ mod tests {
     async fn apply_is_unsupported_outside_linux() {
         let dir = tempfile::tempdir().expect("tempdir");
         let target = dir.path().join("90-homeserver.yaml");
-        let error = apply_netplan(&NetworkConfig::default(), &target)
+        let error = super::apply_netplan(&NetworkConfig::default(), &target)
             .await
             .expect_err("netplan apply must be unsupported here");
         assert!(matches!(error, NetworkError::Unsupported(_)));
