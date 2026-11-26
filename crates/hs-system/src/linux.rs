@@ -318,18 +318,12 @@ fn remaining_minutes(dir: &Path) -> Option<u32> {
     let energy_now = read_u64(dir.join("energy_now"));
     let power_now = read_u64(dir.join("power_now"));
     if let (Some(energy_now), Some(power_now)) = (energy_now, power_now) {
-        if power_now > 0 {
-            let minutes = energy_now.saturating_mul(60) / power_now;
-            return Some(minutes.min(u64::from(u32::MAX)) as u32);
-        }
-        return None;
+        let minutes = energy_now.saturating_mul(60).checked_div(power_now)?;
+        return Some(minutes.min(u64::from(u32::MAX)) as u32);
     }
     let charge_now = read_u64(dir.join("charge_now"))?;
     let current_now = read_u64(dir.join("current_now"))?;
-    if current_now == 0 {
-        return None;
-    }
-    let minutes = charge_now.saturating_mul(60) / current_now;
+    let minutes = charge_now.saturating_mul(60).checked_div(current_now)?;
     Some(minutes.min(u64::from(u32::MAX)) as u32)
 }
 
