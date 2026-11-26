@@ -23,23 +23,40 @@ visión 100 % local.
 
 ---
 
+## Capturas
+
+![Concepto de instalación en la pared](docs/screenshots/wall-concept.jpg)
+
+*Concepto de instalación en pared. Las siguientes capturas son del entorno de
+desarrollo con datos de demostración.*
+
+| Kiosko de pared | Administración |
+|:---:|:---:|
+| [![Kiosko](docs/screenshots/kiosk.png)](docs/screenshots/kiosk.png) | [![Aplicaciones](docs/screenshots/admin-apps.png)](docs/screenshots/admin-apps.png) |
+| ![Domótica](docs/screenshots/kiosk-automation.png) | Panel de aplicaciones, perfiles, red, DNS, firewall e integraciones.<br><br>El kiosko muestra el clima local, la música, las escenas de Home Assistant y el estado del asistente. |
+
+Más capturas y notas en [`docs/screenshots/`](docs/screenshots/).
+
+---
+
 ## Tabla de contenidos
 
-1. [Qué incluye](#qué-incluye)
-2. [Arquitectura en 30 segundos](#arquitectura-en-30-segundos)
-3. [Stack técnico](#stack-técnico)
-4. [Estructura del repositorio](#estructura-del-repositorio)
-5. [Desarrollo rápido](#desarrollo-rápido)
-6. [Verificación del repositorio](#verificación-del-repositorio)
-7. [Primer arranque](#primer-arranque)
-8. [Integraciones externas](#integraciones-externas)
-9. [Seguridad](#seguridad)
-10. [Puertos y servicios](#puertos-y-servicios)
-11. [Configuración y datos](#configuración-y-datos)
-12. [Estado del proyecto](#estado-del-proyecto)
-13. [Documentación](#documentación)
-14. [Contribuir y soporte](#contribuir-y-soporte)
-15. [Licencia](#licencia)
+1. [Capturas](#capturas)
+2. [Qué incluye](#qué-incluye)
+3. [Arquitectura en 30 segundos](#arquitectura-en-30-segundos)
+4. [Stack técnico](#stack-técnico)
+5. [Estructura del repositorio](#estructura-del-repositorio)
+6. [Desarrollo rápido](#desarrollo-rápido)
+7. [Verificación del repositorio](#verificación-del-repositorio)
+8. [Primer arranque](#primer-arranque)
+9. [Integraciones externas](#integraciones-externas)
+10. [Seguridad](#seguridad)
+11. [Puertos y servicios](#puertos-y-servicios)
+12. [Configuración y datos](#configuración-y-datos)
+13. [Estado del proyecto](#estado-del-proyecto)
+14. [Documentación](#documentación)
+15. [Contribuir y soporte](#contribuir-y-soporte)
+16. [Licencia](#licencia)
 
 ---
 
