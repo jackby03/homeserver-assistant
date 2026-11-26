@@ -14,9 +14,9 @@
 //! ```
 //! use std::sync::Arc;
 //!
-//! use hs_apps::{AppService, DeployAppRequest};
+//! use hs_apps::AppService;
 //! use hs_core::Database;
-//! use hs_core::models::NetworkSegment;
+//! use hs_core::models::{DeployAppRequest, NetworkSegment};
 //! use hs_runtime::mock::MockRuntime;
 //!
 //! # tokio::runtime::Runtime::new().unwrap().block_on(async {
