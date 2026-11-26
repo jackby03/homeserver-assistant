@@ -25,13 +25,16 @@ visión 100 % local.
 3. [Stack técnico](#stack-técnico)
 4. [Estructura del repositorio](#estructura-del-repositorio)
 5. [Desarrollo rápido](#desarrollo-rápido)
-6. [Primer arranque](#primer-arranque)
-7. [Seguridad](#seguridad)
-8. [Puertos y servicios](#puertos-y-servicios)
-9. [Configuración y datos](#configuración-y-datos)
-10. [Estado del proyecto](#estado-del-proyecto)
-11. [Documentación](#documentación)
-12. [Licencia](#licencia)
+6. [Verificación del repositorio](#verificación-del-repositorio)
+7. [Primer arranque](#primer-arranque)
+8. [Integraciones externas](#integraciones-externas)
+9. [Seguridad](#seguridad)
+10. [Puertos y servicios](#puertos-y-servicios)
+11. [Configuración y datos](#configuración-y-datos)
+12. [Estado del proyecto](#estado-del-proyecto)
+13. [Documentación](#documentación)
+14. [Contribuir y soporte](#contribuir-y-soporte)
+15. [Licencia](#licencia)
 
 ---
 
@@ -70,13 +73,14 @@ visión 100 % local.
   El clima es la única llamada saliente de este router y solo se hace cuando
   el usuario pregunta por el tiempo; no se envía audio ni datos personales.
 - **Asistente de voz siempre activo**: se activa llamándolo por su nombre (nombre
-  personalizable, por defecto `Aura`), con sensibilidad, ventana de escucha y
+  personalizable, por defecto `Bober`), con sensibilidad, ventana de escucha y
   modo nombre/botón configurables; el reconocimiento de voz y las transcripciones
   se procesan **100 % en local**.
 
 ### Kiosko de pared (pantalla completa)
 
-- **Avatar BoopFace (MIT)**: ojos y expresiones reactivas (escucha, piensa, habla), gestos de cabeza y seguimiento del puntero, con color/ojos por perfil.\n- **Avatar SVG animado** con siluetas `circle`, `squircle`, `cloud`, `cone`,
+- **Avatar BoopFace (MIT)**: ojos y expresiones reactivas (escucha, piensa, habla), gestos de cabeza y seguimiento del puntero, con color/ojos por perfil.
+- **Avatar SVG animado** con siluetas `circle`, `squircle`, `cloud`, `cone`,
   `droplet` y dos ojos en cápsula; color, color de ojos e inclinación
   configurables por perfil.
 - **Estados reactivos**: `idle`, `tracking` (los ojos siguen a la persona con
@@ -324,7 +328,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 |---|---|
 | Núcleo, configuración, persistencia cifrada | ✅ Implementado y probado (redb + ChaCha20-Poly1305) |
 | Autenticación, RBAC, CSRF, auditoría | ✅ Implementado y probado (Argon2id, JWT con revocación) |
-| API admin + kiosko, wizard, WebSockets | ✅ Implementado; 18 tests de integración HTTP |
+| API admin + kiosko, wizard, WebSockets | ✅ Implementado; suite de integración HTTP |
 | Motor Incus, snapshots, apps | ✅ Adaptador nativo + mock; validación real en host Linux |
 | Despliegue de apps con Caddy | ✅ Snippets `apps.d` por app, recarga automática |
 | DNS DoH/DoT, nftables, DMZ, netplan | ✅ Catálogo de 40 variantes, renderizado/golden tests; aplicación real en Linux |
@@ -332,7 +336,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional, respuestas sin emojis para TTS |
 | Agente IA, herramientas, workflows, perfiles | ✅ 20 herramientas, SOUL.md editable, memoria, timers, noticias RSS, calendario/correo opt-in y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
-| UI (admin, kiosko, wizard) | ✅ Type-check, 15 tests y build de producción (0,90 MB) |
+| UI (admin, kiosko, wizard) | ✅ Type-check, 20 tests y build de producción |
 | Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; build/prueba real en host Linux |
 | TLS nativo en el daemon | ❌ Decisión de diseño: lo termina Caddy (ver ADR 0003) |
 | Terminal PTY interactiva en Incus | 🟡 Ejecución de comandos uno-a-uno por WebSocket; PTY pendiente |
@@ -350,13 +354,40 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — entorno de desarrollo y tests.
 - [`voice/README.md`](voice/README.md) — wake word local y STT sin nube.
 - [`docs/adr/`](docs/adr/) — decisiones de arquitectura.
-- [`AGENTS.md`](AGENTS.md) — reglas para contribuir (humanos y agentes de IA).
+- [`AGENTS.md`](AGENTS.md) — reglas de ingeniería para humanos y agentes de IA.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — flujo de contribución y DCO.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — normas de convivencia.
+- [`SECURITY.md`](SECURITY.md) — cómo reportar vulnerabilidades.
+- [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) — licencias de componentes externos.
+- [`ROADMAP.md`](ROADMAP.md) — próximos hitos del proyecto.
 
 ---
 
+## Contribuir y soporte
+
+Este proyecto se publica bajo GPLv3 y busca crecer con la comunidad:
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — flujo de PR, tests y DCO.
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — normas de convivencia.
+- [`ROADMAP.md`](ROADMAP.md) — prioridades y áreas donde ayudar.
+- [`SUPPORT.md`](SUPPORT.md) — soporte, alcance y qué incluir en un reporte.
+- [`SECURITY.md`](SECURITY.md) — reporte privado de vulnerabilidades.
+- Issues y discusiones del repositorio para dudas, ideas y errores.
+
+Las contribuciones de código, documentación, traducciones, pruebas en hardware
+real y reportes reproducibles son bienvenidas. Antes de cambios grandes, abre
+una propuesta para acordar el enfoque.
+
 ## Licencia
 
-MIT — ver [`LICENSE`](LICENSE).
+**GNU General Public License v3.0 (GPL-3.0-only)** — ver [`LICENSE`](LICENSE).
+
+HomeServer Assistant OS es software libre: puedes usarlo, estudiarlo, modificarlo
+y redistribuirlo bajo los términos de la GPLv3. No hay garantía.
+
+Las contribuciones se aceptan bajo la misma licencia (ver
+[`CONTRIBUTING.md`](CONTRIBUTING.md)); los componentes de terceros conservan sus
+licencias originales (ver [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
 
 

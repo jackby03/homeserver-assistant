@@ -9,7 +9,9 @@ reproducibility come before feature velocity.
    (crate boundaries, security invariants, testing, English source code).
 2. Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
    [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
-3. For a non-trivial change, open an issue or discussion describing the problem
+3. Read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) and
+   [`SECURITY.md`](SECURITY.md).
+4. For a non-trivial change, open an issue or discussion describing the problem
    and the proposed approach.
 
 ## Development workflow
@@ -44,7 +46,17 @@ privately with the affected component, a reproduction and impact assessment.
 See [`docs/SECURITY.md`](docs/SECURITY.md) for the threat model and incident
 response procedures.
 
-## License
+## License and DCO
 
-By contributing you agree that your contributions are licensed under the MIT
-license (see [`LICENSE`](LICENSE)).
+This project is licensed under the **GNU General Public License v3.0 only**
+(`GPL-3.0-only`). By contributing you agree that your contribution is licensed
+under the same terms.
+
+Sign off every commit with the Developer Certificate of Origin:
+
+```bash
+git commit -s -m "fix: ..."
+```
+
+The `Signed-off-by` line certifies that you wrote the contribution or have the
+right to submit it under the project license.

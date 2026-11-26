@@ -17,6 +17,7 @@
 #
 # Examples:
 #   ./iso/build-iso.sh                                  # download, verify, build
+#   export HS_CONSOLE_PASSWORD_HASH='$6$...'   # from openssl passwd -6
 #   ./iso/build-iso.sh --iso ~/isos/ubuntu-24.04.3-live-server-amd64.iso
 #   ./iso/build-iso.sh --binaries target/release --ui-dir ui/dist --test
 #   ./iso/build-iso.sh --clean
@@ -68,6 +69,10 @@ Options:
   --clean           Remove the work and output directories, then exit.
   --keep-work       Keep the extracted/modified ISO tree (debugging).
   -h, --help        Show this help.
+
+Environment:
+  HS_CONSOLE_PASSWORD_HASH  Required. SHA-512 crypt hash for the local console
+                            user, generated with: openssl passwd -6
 
 Dependencies: xorriso, coreutils (sha256sum, dd), sed/awk/grep, curl or wget,
                optionally qemu-system-x86_64 + qemu-img + socat (for --test).
@@ -214,7 +219,13 @@ extract_iso() {
 inject_content() {
     log "injecting autoinstall seed"
     mkdir -p "$SEED_DIR"
-    install -m 0644 "$SCRIPT_DIR/autoinstall/user-data" "$SEED_DIR/user-data"
+        : "${HS_CONSOLE_PASSWORD_HASH:?set HS_CONSOLE_PASSWORD_HASH to a SHA-512 crypt hash generated with openssl passwd -6}"
+    if [[ ! "$HS_CONSOLE_PASSWORD_HASH" =~ ^\$6\$ ]]; then
+        die "HS_CONSOLE_PASSWORD_HASH must be a SHA-512 crypt hash (openssl passwd -6)"
+    fi
+    sed "s|__CONSOLE_PASSWORD_HASH__|${HS_CONSOLE_PASSWORD_HASH}|g" \
+        "$SCRIPT_DIR/autoinstall/user-data" > "$SEED_DIR/user-data"
+    chmod 0644 "$SEED_DIR/user-data"
     install -m 0644 "$SCRIPT_DIR/autoinstall/meta-data" "$SEED_DIR/meta-data"
 
     log "staging repository assets under /hs/repo"

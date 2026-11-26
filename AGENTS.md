@@ -103,20 +103,16 @@ Rules:
 - Run `cargo test --workspace --offline` before handing work back.
 - Tests must not require root, systemd, Incus, network access or a camera.
 
-## 6. Working agreements for AI agents
+## 6. Working agreements
 
-- Claim your shared task on the team board before writing files; keep the
-  `write_scopes` respected. Never edit files outside your assigned scope.
-- Do not edit `Cargo.toml` workspace dependencies or another crate's manifest
-  without coordinating with the Lead.
-- If a dependency is needed and is not already in `[workspace.dependencies]`,
-  ask the Lead instead of adding it.
-- Network access is restricted: run `cargo build --offline` / `cargo test
-  --offline`. A one-time `cargo fetch` was already performed.
-- Keep the build green. Never leave the workspace in a non-compiling state at
-  the end of your turn.
-- Report: what changed, how it was verified (`cargo test` output summary), and
-  any known gaps. Be precise, no fluff.
+- Keep each change focused; do not edit unrelated files just to reformat them.
+- Do not change workspace dependencies or another crate's manifest without a
+  maintainer decision in the issue/PR.
+- Prefer reproducible offline builds when possible; document any first-time
+  fetch or environment setup in the PR.
+- Keep the build green. Never leave the workspace in a non-compiling state.
+- Report what changed, how it was verified (`cargo test` output summary) and
+  any known gaps. Be precise.
 
 ## 7. Definition of done (per feature)
 

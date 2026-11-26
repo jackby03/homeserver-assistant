@@ -49,6 +49,9 @@ No root is required: the script only writes below `iso/work/` and
 ## Build
 
 ```bash
+# 0. Choose the console password. It is required and has no default.
+export HS_CONSOLE_PASSWORD_HASH="$(openssl passwd -6 'a strong unique password')"
+
 # 1. Build the appliance binaries (Linux target) and the portal UI.
 cargo build --release -p hs-daemon -p hs-vision
 (cd ui && pnpm install --frozen-lockfile && pnpm build)   # produces ui/dist
@@ -103,7 +106,7 @@ verified base ISO so no isolinux package is required.
 | `locale` | `en_US.UTF-8` | UI is localized at the application layer (`es`/`en`), OS stays English |
 | `timezone` | `UTC` | per-app timezones are configuration, not OS state |
 | `keyboard` | `us` | change for the site |
-| `identity` | user `homeserver` | local console admin; **the committed password hash is the well-known example for "ubuntu" - replace it before shipping** (`openssl passwd -6`) |
+| `identity` | user `homeserver` | local console admin; the committed value is a placeholder. The build requires `HS_CONSOLE_PASSWORD_HASH` (`openssl passwd -6`) and refuses to produce an ISO without it |
 | `ssh` | `install-server: false` | portal + local console only; enable with keys if required |
 | `storage` | `layout: direct` (ext4) | simple single-disk layout; btrfs alternative documented in user-data; 4 GiB swap file created in late-commands |
 | `refresh-installer` | `update: false` | offline-friendly, deterministic |
@@ -209,7 +212,7 @@ install phase so the test detects the post-install reboot.
 
 | Want to change | Edit |
 | --- | --- |
-| console password/hostname/locale | `iso/autoinstall/user-data` (`identity`, `locale`, `keyboard`) |
+| console password/hostname/locale | `iso/autoinstall/user-data` (`identity`, `locale`, `keyboard`); password injected via `HS_CONSOLE_PASSWORD_HASH` |
 | packages | `iso/autoinstall/user-data` (`packages:`) |
 | static network at install time | `iso/autoinstall/user-data` (`network:` section, commented) |
 | install-time scripts | `iso/autoinstall/user-data` (`late-commands:`) |
@@ -240,8 +243,10 @@ belongs in `infra/` and is installed by `scripts/install.sh`.
 
 ## Security notes
 
-- The committed console password hash in `user-data` is the **documented
-  example** for "ubuntu": replace it before building a real image.
+- There is **no default console password**. `user-data` contains an explicit
+  placeholder and `iso/build-iso.sh` refuses to build without
+  `HS_CONSOLE_PASSWORD_HASH` set to a SHA-512 crypt hash. Generate it with
+  `openssl passwd -6 'a strong unique password'`.
 - SSH is not installed; if you enable it, use `allow-pw: false` and keys.
 - No secrets are embedded in the ISO: tunnel credentials, tokens and keys live
   in the encrypted vault created on first boot, or are generated on the

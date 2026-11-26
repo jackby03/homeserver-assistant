@@ -18,8 +18,10 @@
 # The install is fully unattended: no interactive sections, no SSH server
 # installed, no cloud-init datasource on the installed system.
 #
-# BEFORE SHIPPING AN APPLIANCE: change the console password hash below.
-#   openssl passwd -6            # prompts for the password
+# There is no default console password. The ISO build injects the hash
+# required by HS_CONSOLE_PASSWORD_HASH:
+#   openssl passwd -6 'a strong unique password'   # produce the hash
+#   HS_CONSOLE_PASSWORD_HASH='$6$...' iso/build-iso.sh ...
 # =============================================================================
 autoinstall:
   version: 1
@@ -41,9 +43,9 @@ autoinstall:
     hostname: homeserver
     username: homeserver
     realname: HomeServer Assistant
-    # Password hash for the local console user. THIS IS THE WELL-KNOWN EXAMPLE
-    # HASH FOR THE PASSWORD "ubuntu" - replace it before building a real image:
-    #   openssl passwd -6 'a strong password'
+    # Password hash for the local console user. The ISO build MUST replace the
+    # placeholder via HS_CONSOLE_PASSWORD_HASH (SHA-512 crypt, generated with
+    # `openssl passwd -6`). There is deliberately no default password.
     password: "__CONSOLE_PASSWORD_HASH__"
 
   # --- SSH -------------------------------------------------------------------
