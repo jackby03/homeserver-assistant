@@ -22,20 +22,25 @@ integration, stores credentials, and grants the tool to the active profile.
 
 1. **Global opt-in** — `SystemConfig.integrations.composio.enabled` defaults to
    `false`.
-2. **Credentials** — API key in `SecretStore` under
+2. **Project credential** — one Composio project API key in `SecretStore` under
    `integrations.composio.api_key`; non-secret settings live in `config.json`.
-3. **Action allow-list** — the model sees only:
+3. **Auth config per toolkit** — `auth_configs` maps `gmail` and
+   `googlecalendar` to the Composio auth-config ids selected by the operator.
+4. **Connected account per toolkit** — `connected_accounts` stores only the
+   Composio connected-account id created after OAuth; OAuth tokens never enter
+   the appliance.
+5. **Action allow-list** — the model sees only:
    - `calendar.list_events` → read-only calendar action;
    - `calendar.create_event` → calendar write action;
    - `email.send` → email send action.
-4. **Per-profile permission** — the existing profile `allowed_tools` list is the
+6. **Per-profile permission** — the existing profile `allowed_tools` list is the
    final authority. A tool the profile does not have is never executed.
-5. **Risk gate** — `ToolRisk::Write` and `ToolRisk::Destructive` require an
+7. **Risk gate** — `ToolRisk::Write` and `ToolRisk::Destructive` require an
    explicit confirmation in the latest user message.
-6. **Audit and trace** — configuration changes are audited; every agent tool
+8. **Audit and trace** — configuration changes are audited; every agent tool
    call is returned in the response trace with name, arguments, allowed flag,
    error and latency.
-7. **Output handling** — external responses are passed to the model as data and
+9. **Output handling** — external responses are passed to the model as data and
    the prompt explicitly forbids following instructions found inside them.
 
 ## 3. Configuration API
@@ -44,10 +49,17 @@ integration, stores credentials, and grants the tool to the active profile.
 |---|---|---|
 | GET | `/api/v1/integrations/composio` | `agent.read` |
 | PUT | `/api/v1/integrations/composio` | `agent.manage` |
+| POST | `/api/v1/integrations/composio/connect` | `agent.manage` |
+| GET | `/api/v1/integrations/composio/tools?toolkit=gmail` | `agent.read` |
 
 The PUT body includes `enabled`, `base_url`, `user_id`,
-`connected_account_id`, the three action slugs and an optional `api_key`.
-Omitting `api_key` preserves the existing one. The key is never returned.
+`connected_account_id`, `auth_configs`, `connected_accounts`, the three action
+slugs and an optional `api_key`. Omitting `api_key` preserves the existing one.
+The key is never returned.
+
+`POST /integrations/composio/connect` takes `{"toolkit":"gmail"}` and returns
+the Composio connected-account id plus the OAuth redirect URL. The id is stored
+in `connected_accounts[toolkit]`; tokens remain at Composio.
 
 Example POC configuration (loopback mock):
 
@@ -65,9 +77,15 @@ Example POC configuration (loopback mock):
 ```
 
 For production, use `https://backend.composio.dev` and a real connected account.
-Composio's current recommendation is the Tool Router session flow rather than
-direct `POST /tools/execute/{slug}`; the allow-listed capability mapping can be
-migrated to sessions without changing the tools exposed to the model.
+Execution uses `POST /api/v3.1/tools/execute/{tool_slug}` with
+`toolkit_versions=latest` and the toolkit's `connected_account_id`. Composio's
+current recommendation is the Tool Router session flow; the allow-listed
+capability mapping can be migrated to sessions without changing the tools
+exposed to the model.
+
+The proxy endpoint (`/api/v3.1/tools/execute/proxy`) is intentionally **not**
+exposed to the model yet: it requires a domain allow-list and a separate
+cross-domain rejection review.
 
 References:
 - <https://docs.composio.dev/reference/v3/api-reference/tool-router/postToolRouterSessionBySessionIdExecute>
@@ -90,15 +108,22 @@ and logs the request body. Results:
    - Mock received `GMAIL_SEND_EMAIL` with recipient, subject and body.
 3. Calendar write
    - First turn: no tool executed; Bober asked to confirm.
-   - A confirmation phrase test is covered in `hs-agent` unit tests; the same
-     risk gate applies to `calendar.create_event`.
+   - Second turn: "Sí, adelante." → `calendar.create_event` executed.
+   - Mock received the event payload with the toolkit connected account.
+4. Connections and discovery
+   - `POST /integrations/composio/connect` for `gmail` and `googlecalendar`
+     returned `ca_mock_gmail` / `ca_mock_googlecalendar` and stored them.
+   - `GET /integrations/composio/tools?toolkit=gmail` returned the mock tool
+     catalog.
+   - Execution logs show `connected_account_id: ca_mock_googlecalendar` and
+     `toolkit_versions: latest`.
 
 The mock does not validate real OAuth state or Google permissions; that is the
 remaining step before calling this production-ready.
 
 ## 5. Known gaps before production
 
-- No OAuth connection UI yet; the connected account id is entered manually.
+- No OAuth connection UI yet; the API returns the redirect URL and stores the id.
 - The direct execute endpoint should be migrated to Composio Tool Router
   sessions.
 - Tool executions are traced in the agent response but not persisted as audit

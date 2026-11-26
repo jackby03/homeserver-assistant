@@ -7,6 +7,8 @@
 //! The schema is versioned with [`CONFIG_SCHEMA_VERSION`]; migrations live in
 //! [`crate::state::ConfigManager`].
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 pub use crate::dns::DnsProvider;
@@ -624,8 +626,12 @@ pub struct ComposioConfig {
     pub base_url: String,
     /// Stable Composio user id for this household.
     pub user_id: String,
-    /// Connected account used for the action allow-list.
+    /// Legacy single connected account (fallback when no per-toolkit entry).
     pub connected_account_id: Option<String>,
+    /// Auth config id per toolkit (for example `googlecalendar`).
+    pub auth_configs: BTreeMap<String, String>,
+    /// Connected account id per toolkit, created after the user grants OAuth.
+    pub connected_accounts: BTreeMap<String, String>,
     /// Secret-store key holding the Composio API key.
     pub api_key_secret: String,
     /// Read-only calendar action slug.
@@ -643,6 +649,8 @@ impl Default for ComposioConfig {
             base_url: "https://backend.composio.dev".to_owned(),
             user_id: "homeserver".to_owned(),
             connected_account_id: None,
+            auth_configs: BTreeMap::new(),
+            connected_accounts: BTreeMap::new(),
             api_key_secret: "integrations.composio.api_key".to_owned(),
             calendar_list_action: "GOOGLECALENDAR_LIST_EVENTS".to_owned(),
             calendar_create_action: "GOOGLECALENDAR_CREATE_EVENT".to_owned(),
@@ -688,6 +696,22 @@ impl ComposioConfig {
                 "is required",
             ));
         }
+        for (toolkit, auth_config) in &self.auth_configs {
+            if !valid_toolkit_slug(toolkit) || auth_config.trim().is_empty() {
+                return Err(CoreError::validation(
+                    "integrations.composio.auth_configs",
+                    "keys must be toolkit slugs and values non-empty auth config ids",
+                ));
+            }
+        }
+        for (toolkit, account) in &self.connected_accounts {
+            if !valid_toolkit_slug(toolkit) || account.trim().is_empty() {
+                return Err(CoreError::validation(
+                    "integrations.composio.connected_accounts",
+                    "keys must be toolkit slugs and values non-empty connected account ids",
+                ));
+            }
+        }
         for (field, slug) in [
             ("calendar_list_action", &self.calendar_list_action),
             ("calendar_create_action", &self.calendar_create_action),
@@ -707,6 +731,14 @@ impl ComposioConfig {
         }
         Ok(())
     }
+}
+
+fn valid_toolkit_slug(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character == '_')
 }
 
 fn is_loopback_http(url: &str) -> bool {

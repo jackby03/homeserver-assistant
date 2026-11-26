@@ -48,6 +48,8 @@ pub struct AppState {
     pub profiles: Arc<ProfileService>,
     /// Agentic tool registry (permission enforcement).
     pub tools: Arc<ToolRegistry>,
+    /// Opt-in Composio gateway (auth configs/connected accounts).
+    pub composio: Arc<crate::integrations::ComposioAdapter>,
     /// LLM agent loop.
     pub agent: Arc<AgentService>,
     /// Kiosk state machine and event bus.

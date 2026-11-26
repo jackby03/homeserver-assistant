@@ -113,10 +113,11 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
     let timers = crate::timers::TimerService::new(&daemon.data_dir, events.clone());
     timers.start();
 
-    let external = Arc::new(crate::integrations::ComposioAdapter::new(
+    let composio = Arc::new(crate::integrations::ComposioAdapter::new(
         Arc::clone(&config_manager),
         Arc::clone(&secrets),
     ));
+    let external: Arc<dyn hs_tools::ExternalActions> = composio.clone();
     let ports = adapters::build_ports(
         Arc::clone(&runtime),
         Arc::clone(&system),
@@ -170,6 +171,7 @@ pub async fn build_state(daemon: DaemonConfig) -> Result<SharedState> {
         ha,
         profiles,
         tools,
+        composio,
         agent,
         kiosk,
         voice,
