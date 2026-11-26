@@ -33,31 +33,31 @@ tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 axum = { version = "0.8", features = ["ws", "macros"] }
-axum-extra = { version = "0.10", features = ["cookie"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["fs", "cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.7", features = ["fs", "cors", "trace", "compression-gzip"] }
 hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 hyperlocal = "0.9"
 http-body-util = "0.1"
 http = "1"
 bytes = "1"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 url = "2"
 
 # --- Security / crypto -------------------------------------------------------
 argon2 = { version = "0.5", features = ["std"] }
-chacha20poly1305 = "0.10"
-sha2 = "0.10"
-hmac = "0.12"
+chacha20poly1305 = "0.11"
+sha2 = "0.11"
+hmac = "0.13"
 subtle = "2"
 zeroize = { version = "1", features = ["derive"] }
-base64 = "0.22"
-rand = "0.8"
+base64 = "0.23"
+rand = "0.10"
 hex = "0.4"
 
 # --- Storage -----------------------------------------------------------------
-redb = "2"
+redb = "5"
 
 # --- Observability / errors --------------------------------------------------
 tracing = "0.1"
@@ -74,8 +74,8 @@ clap = { version = "4", features = ["derive", "env"] }
 ipnet = "2"
 get_if_addrs = "0.5"
 libc = "0.2"
-mdns-sd = "0.11"
-sysinfo = "0.33"
+mdns-sd = "0.22"
+sysinfo = "0.40"
 tempfile = "3"
 
 [profile.release]
