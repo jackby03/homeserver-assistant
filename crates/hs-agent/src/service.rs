@@ -21,7 +21,7 @@ use hs_core::models::{
 use hs_core::state::{Database, SecretStore};
 use hs_core::validation;
 use hs_profiles::ProfileService;
-use hs_tools::{ToolError, ToolRegistry};
+use hs_tools::{ToolError, ToolRegistry, ToolRisk};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -72,14 +72,6 @@ fn default_enabled() -> bool {
     true
 }
 
-/// Tools whose effects are hard to undo require an explicit user confirmation.
-fn requires_confirmation(tool: &str) -> bool {
-    matches!(
-        tool,
-        "runtime.stop_instance" | "runtime.delete_instance" | "app.delete"
-    )
-}
-
 /// Whether the latest user message clearly confirms a pending action.
 fn user_confirmed_destructive_action(messages: &[ChatMessage]) -> bool {
     let Some(message) = messages
@@ -97,14 +89,24 @@ fn user_confirmed_destructive_action(messages: &[ChatMessage]) -> bool {
         .replace('í', "i")
         .replace('ó', "o")
         .replace('ú', "u");
+    if text.contains("confirm") {
+        return true;
+    }
+    let trimmed =
+        text.trim_matches(|character: char| !character.is_alphanumeric() && character != ' ');
+    if matches!(
+        trimmed,
+        "si" | "ok" | "vale" | "dale" | "adelante" | "envialo" | "mandalo"
+    ) {
+        return true;
+    }
     [
-        "confirmo",
-        "confirmado",
-        "si, hazlo",
-        "si hazlo",
-        "adelante",
         "hazlo",
         "de acuerdo",
+        "adelante",
+        "dale",
+        "envialo",
+        "mandalo",
         "yes, do it",
         "go ahead",
         "confirmed",
@@ -521,7 +523,12 @@ impl AgentService {
         call: ToolCall,
         confirmed: bool,
     ) {
-        if requires_confirmation(&call.name) && !confirmed {
+        if self
+            .tools
+            .risk(&call.name)
+            .is_some_and(ToolRisk::requires_confirmation)
+            && !confirmed
+        {
             let message = format!(
                 "confirmation required before using `{}`; ask the user explicitly and wait for a clear yes",
                 call.name
@@ -849,6 +856,7 @@ mod tests {
             memory: Arc::new(hs_tools::EphemeralMemoryStore::default()),
             timers: Arc::new(hs_tools::EphemeralTimerStore::default()),
             news: Arc::new(hs_tools::EphemeralNews),
+            external: Arc::new(hs_tools::EphemeralExternal),
         })
     }
 

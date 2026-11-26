@@ -127,6 +127,10 @@ impl Tool for RuntimeStopInstance {
         "runtime.stop_instance"
     }
 
+    fn risk(&self) -> crate::registry::ToolRisk {
+        crate::registry::ToolRisk::Destructive
+    }
+
     fn description(&self) -> &'static str {
         "Stop a running container or virtual machine."
     }
@@ -797,6 +801,162 @@ impl Tool for NewsLatest {
     }
 }
 
+fn external_date(map: &serde_json::Map<String, Value>, key: &str) -> ToolResult<String> {
+    let value = args::required_string(map, key)?;
+    chrono::DateTime::parse_from_rfc3339(&value).map_err(|_| {
+        ToolError::InvalidArguments(format!("`{key}` must be an RFC3339 timestamp"))
+    })?;
+    Ok(value)
+}
+
+struct CalendarListEvents;
+
+#[async_trait]
+impl Tool for CalendarListEvents {
+    fn name(&self) -> &'static str {
+        "calendar.list_events"
+    }
+
+    fn description(&self) -> &'static str {
+        "List upcoming events from the configured calendar. Requires the admin to enable the Composio integration."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "time_min": { "type": "string", "description": "Optional RFC3339 lower bound." },
+                "time_max": { "type": "string", "description": "Optional RFC3339 upper bound." },
+                "max_results": { "type": "integer", "minimum": 1, "maximum": 50 }
+            },
+            "required": [],
+            "additionalProperties": false
+        })
+    }
+
+    async fn execute(&self, ports: &ToolPorts, arguments: Value) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let mut payload = serde_json::Map::new();
+        if let Some(value) = map.get("time_min") {
+            payload.insert("time_min".to_owned(), value.clone());
+        }
+        if let Some(value) = map.get("time_max") {
+            payload.insert("time_max".to_owned(), value.clone());
+        }
+        if let Some(value) = map.get("max_results") {
+            payload.insert("max_results".to_owned(), value.clone());
+        }
+        ports
+            .external
+            .execute("calendar.list", Value::Object(payload))
+            .await
+            .map_err(ToolError::Upstream)
+    }
+}
+
+struct CalendarCreateEvent;
+
+#[async_trait]
+impl Tool for CalendarCreateEvent {
+    fn name(&self) -> &'static str {
+        "calendar.create_event"
+    }
+
+    fn description(&self) -> &'static str {
+        "Create a calendar event. The agent must ask for confirmation first."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "summary": { "type": "string", "description": "Event title." },
+                "start": { "type": "string", "description": "Start time as RFC3339." },
+                "end": { "type": "string", "description": "End time as RFC3339." },
+                "description": { "type": "string", "description": "Optional details." }
+            },
+            "required": ["summary", "start", "end"],
+            "additionalProperties": false
+        })
+    }
+
+    fn risk(&self) -> crate::registry::ToolRisk {
+        crate::registry::ToolRisk::Write
+    }
+
+    async fn execute(&self, ports: &ToolPorts, arguments: Value) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let summary = args::required_string(&map, "summary")?;
+        let start = external_date(&map, "start")?;
+        let end = external_date(&map, "end")?;
+        let description = args::optional_value(&map, "description")
+            .and_then(|value| value.as_str().map(str::to_owned));
+        ports
+            .external
+            .execute(
+                "calendar.create",
+                json!({
+                    "summary": summary,
+                    "start": start,
+                    "end": end,
+                    "description": description,
+                }),
+            )
+            .await
+            .map_err(ToolError::Upstream)
+    }
+}
+
+struct EmailSend;
+
+#[async_trait]
+impl Tool for EmailSend {
+    fn name(&self) -> &'static str {
+        "email.send"
+    }
+
+    fn description(&self) -> &'static str {
+        "Send an email through the configured mailbox. The agent must ask for explicit confirmation first."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "to": { "type": "string", "description": "Recipient email address." },
+                "subject": { "type": "string", "description": "Email subject." },
+                "body": { "type": "string", "description": "Plain-text email body." }
+            },
+            "required": ["to", "subject", "body"],
+            "additionalProperties": false
+        })
+    }
+
+    fn risk(&self) -> crate::registry::ToolRisk {
+        crate::registry::ToolRisk::Destructive
+    }
+
+    async fn execute(&self, ports: &ToolPorts, arguments: Value) -> ToolResult<Value> {
+        let map = args::object(arguments)?;
+        let to = args::required_string(&map, "to")?;
+        if !to.contains('@') || to.len() > 320 {
+            return Err(ToolError::InvalidArguments(
+                "`to` must be a valid email address".to_owned(),
+            ));
+        }
+        let subject = args::required_string(&map, "subject")?;
+        let body = args::required_string(&map, "body")?;
+        ports
+            .external
+            .execute(
+                "email.send",
+                json!({ "to": to, "subject": subject, "body": body }),
+            )
+            .await
+            .map_err(ToolError::Upstream)
+    }
+}
+
 /// Instantiate every built-in tool.
 pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
     vec![
@@ -817,6 +977,9 @@ pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(TimerList),
         Arc::new(TimerCancel),
         Arc::new(NewsLatest),
+        Arc::new(CalendarListEvents),
+        Arc::new(CalendarCreateEvent),
+        Arc::new(EmailSend),
     ]
 }
 
@@ -824,7 +987,7 @@ pub(crate) fn builtin_tools() -> Vec<Arc<dyn Tool>> {
 mod tests {
     use super::*;
     use crate::test_support::{fake_ports, profile_with_tools, CallCounts};
-    use crate::ToolRegistry;
+    use crate::{ToolRegistry, ToolRisk};
 
     fn registry() -> (Arc<ToolRegistry>, Arc<CallCounts>) {
         let (ports, counts, _webhook_payload) = fake_ports();
@@ -850,6 +1013,9 @@ mod tests {
             "timer.list".to_owned(),
             "timer.cancel".to_owned(),
             "news.latest".to_owned(),
+            "calendar.list_events".to_owned(),
+            "calendar.create_event".to_owned(),
+            "email.send".to_owned(),
         ]
     }
 
@@ -857,7 +1023,7 @@ mod tests {
     async fn every_builtin_tool_has_a_schema() {
         let (registry, _counts) = registry();
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 17);
+        assert_eq!(descriptors.len(), 20);
         let names: Vec<String> = descriptors.iter().map(|tool| tool.name.clone()).collect();
         let mut expected = all_tools();
         expected.sort();
@@ -896,6 +1062,46 @@ mod tests {
             .await
             .expect("recall");
         assert_eq!(empty.output["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn external_tools_are_allowlisted_and_risk_classified() {
+        let (registry, _counts) = registry();
+        assert_eq!(registry.risk("calendar.list_events"), Some(ToolRisk::Read));
+        assert_eq!(
+            registry.risk("calendar.create_event"),
+            Some(ToolRisk::Write)
+        );
+        assert_eq!(registry.risk("email.send"), Some(ToolRisk::Destructive));
+        assert_eq!(registry.risk("news.latest"), Some(ToolRisk::Read));
+        assert_eq!(registry.risk("does.not.exist"), None);
+    }
+
+    #[tokio::test]
+    async fn external_tools_only_reach_the_named_capabilities() {
+        let (registry, _counts) = registry();
+        let profile = profile_with_tools(&[
+            "calendar.list_events",
+            "calendar.create_event",
+            "email.send",
+        ]);
+        let calendar = registry
+            .invoke(&profile, "calendar.list_events", json!({"max_results": 5}))
+            .await
+            .expect("calendar list");
+        assert_eq!(calendar.output["capability"], "calendar.list");
+        assert_eq!(calendar.output["arguments"]["max_results"], 5);
+
+        let email = registry
+            .invoke(
+                &profile,
+                "email.send",
+                json!({"to": "ana@example.com", "subject": "Hola", "body": "Texto"}),
+            )
+            .await
+            .expect("email");
+        assert_eq!(email.output["capability"], "email.send");
+        assert_eq!(email.output["arguments"]["to"], "ana@example.com");
     }
 
     #[tokio::test]

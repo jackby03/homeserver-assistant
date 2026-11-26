@@ -264,6 +264,14 @@ cifrada, degradación de servicios y los flujos HTTP completos del daemon.
 
 ---
 
+## Integraciones externas
+
+Calendario y correo son **opt-in** y pasan por un gateway de capacidades con
+riesgo explícito, confirmación para escrituras, API key cifrada y allowlist de
+acciones. El modelo de amenazas y los límites están en
+[`docs/AGENT_CAPABILITIES.md`](docs/AGENT_CAPABILITIES.md). El POC se validó con
+un gateway Composio simulado; para producción faltan OAuth y credenciales reales.
+
 ## Seguridad
 
 Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
@@ -322,7 +330,7 @@ Resumen (detalle completo en [`docs/SECURITY.md`](docs/SECURITY.md)):
 | DNS DoH/DoT, nftables, DMZ, netplan | ✅ Catálogo de 40 variantes, renderizado/golden tests; aplicación real en Linux |
 | Home Assistant + descubrimiento IoT | ✅ Implementado con transportes simulados en tests |
 | Asistente de voz local (wake word) | ✅ Nombre configurable, matcher Rust con tests, helper STT local opcional, respuestas sin emojis para TTS |
-| Agente IA, herramientas, workflows, perfiles | ✅ 17 herramientas, SOUL.md editable, memoria, timers, noticias RSS y trazas |
+| Agente IA, herramientas, workflows, perfiles | ✅ 20 herramientas, SOUL.md editable, memoria, timers, noticias RSS, calendario/correo opt-in y trazas |
 | Visión local | ✅ Seguimiento en Rust + helper Python opcional + matching en daemon |
 | UI (admin, kiosko, wizard) | ✅ Type-check, 15 tests y build de producción (0,90 MB) |
 | Infraestructura, systemd, ISO, QEMU | 🟡 Plantillas y scripts validados; build/prueba real en host Linux |

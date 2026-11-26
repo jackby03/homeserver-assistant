@@ -352,6 +352,39 @@ impl NewsSearch for EphemeralNews {
             .collect())
     }
 }
+/// Allow-listed outbound actions such as Composio calendar/email tools.
+#[async_trait]
+pub trait ExternalActions: Send + Sync {
+    /// Execute a named capability with already validated arguments.
+    ///
+    /// # Errors
+    /// Returns a human-readable message when the integration is disabled,
+    /// not authenticated or the provider rejects the action.
+    async fn execute(
+        &self,
+        capability: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, String>;
+}
+
+/// Deterministic external-action fake used by tests.
+#[derive(Debug, Default)]
+pub struct EphemeralExternal;
+
+#[async_trait]
+impl ExternalActions for EphemeralExternal {
+    async fn execute(
+        &self,
+        capability: &str,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        Ok(serde_json::json!({
+            "capability": capability,
+            "arguments": arguments,
+            "status": "ok",
+        }))
+    }
+}
 /// Bundle of outbound adapters required to execute tools.
 ///
 /// Cloning is cheap: every field is an `Arc`.
@@ -373,6 +406,8 @@ pub struct ToolPorts {
     pub timers: Arc<dyn TimerControl>,
     /// Read-only current-events feeds.
     pub news: Arc<dyn NewsSearch>,
+    /// Allow-listed external capabilities (Composio calendar/email).
+    pub external: Arc<dyn ExternalActions>,
 }
 
 impl std::fmt::Debug for ToolPorts {

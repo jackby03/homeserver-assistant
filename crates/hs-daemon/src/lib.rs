@@ -18,6 +18,7 @@ pub mod cookies;
 pub mod dto;
 pub mod error;
 pub mod events;
+pub mod integrations;
 pub mod kiosk;
 pub mod memory;
 pub mod middleware;

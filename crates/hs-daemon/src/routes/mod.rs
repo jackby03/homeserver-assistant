@@ -7,6 +7,7 @@ pub mod auth;
 pub mod discovery;
 pub mod homeassistant;
 pub mod instances;
+pub mod integrations;
 pub mod kiosk;
 pub mod network;
 pub mod profiles;

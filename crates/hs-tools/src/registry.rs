@@ -13,6 +13,26 @@ use crate::error::{ToolError, ToolResult};
 use crate::ports::ToolPorts;
 use crate::tools;
 
+/// How dangerous a tool is when the model decides to call it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolRisk {
+    /// Read-only or trivially reversible local action.
+    Read,
+    /// Creates or changes state that the user can undo.
+    Write,
+    /// Sends data outside the appliance or cannot be undone.
+    Destructive,
+}
+
+impl ToolRisk {
+    /// Whether the agent must ask the user before invoking the tool.
+    #[must_use]
+    pub fn requires_confirmation(self) -> bool {
+        matches!(self, Self::Write | Self::Destructive)
+    }
+}
+
 /// A capability the assistant may invoke.
 ///
 /// Implementations only talk to the outside world through [`ToolPorts`]; they
@@ -29,6 +49,11 @@ pub trait Tool: Send + Sync {
     /// JSON-schema-style parameter object with `type`, `properties` and
     /// `required`.
     fn parameters(&self) -> Value;
+
+    /// Risk classification used by the agent confirmation gate.
+    fn risk(&self) -> ToolRisk {
+        ToolRisk::Read
+    }
 
     /// Execute the tool with arguments that passed schema validation.
     ///
@@ -61,6 +86,8 @@ pub struct ToolDescriptor {
     pub description: String,
     /// JSON-schema-style parameter object.
     pub parameters: Value,
+    /// Risk classification shown to the admin UI.
+    pub risk: ToolRisk,
 }
 
 /// Result of one successful tool invocation.
@@ -157,6 +184,7 @@ impl ToolRegistry {
                 name: tool.name().to_owned(),
                 description: tool.description().to_owned(),
                 parameters: tool.parameters(),
+                risk: tool.risk(),
             })
             .collect()
     }
@@ -165,6 +193,12 @@ impl ToolRegistry {
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
         self.tools.get(name).map(|tool| tool.as_ref())
+    }
+
+    /// Risk classification for a registered tool.
+    #[must_use]
+    pub fn risk(&self, tool: &str) -> Option<ToolRisk> {
+        self.tools.get(tool).map(|entry| entry.risk())
     }
 
     /// Invoke `tool` on behalf of `profile`.
@@ -238,7 +272,7 @@ mod tests {
         let (ports, _counts, _webhook_payload) = fake_ports();
         let registry = ToolRegistry::builtin(ports);
         let descriptors = registry.list();
-        assert_eq!(descriptors.len(), 17);
+        assert_eq!(descriptors.len(), 20);
         assert!(registry.get("system.status").is_some());
         assert!(registry.get("music.play").is_some());
         assert!(registry.get("does.not.exist").is_none());
